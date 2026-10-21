@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "dev": "npm run dev --workspace=@mms/mapping-studio",
     "build": "npm run build --workspace=@mms/mapping-studio",
-    "e2e": "npm run test:e2e --workspace=@mms/mapping-studio"
+    "e2e": "npm run test:e2e --workspace=@mms/mapping-studio",
+    "e2e:container": "bash container/smoke.sh"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
