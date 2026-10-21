@@ -25,6 +25,7 @@
     "react-dom": "19.3.1",
     "@mms/file-import": "^0.0.0",
     "@mms/mapping-core": "^0.0.0",
+    "@mms/mapping-suggest": "^0.0.0",
     "@mms/profiler": "^0.0.0",
     "@mms/relationships": "^0.0.0",
     "@mms/routine-library": "^0.0.0",

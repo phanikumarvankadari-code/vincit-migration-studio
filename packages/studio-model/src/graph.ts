@@ -299,3 +299,36 @@ export function buildRelationshipGraph(project: Project): Graph {
   }));
   return { nodes, edges };
 }
+
+export interface SuggestionItem {
+  structureId: string;
+  targetFieldId: string;
+  sourceFieldId: string;
+}
+
+/**
+ * Turns accepted suggestions into direct mappings in one edit. A target that already has a mapping, or a source
+ * that no longer exists, is skipped, so accepting never overwrites work.
+ */
+export function applySuggestions(
+  project: Project,
+  items: readonly SuggestionItem[],
+  at: string,
+): { project: Project; applied: number; skipped: number } {
+  let current = project;
+  let applied = 0;
+  for (const i of items) {
+    const r = connectFields(
+      current,
+      i.structureId,
+      sourceNodeId(i.sourceFieldId),
+      targetNodeId(i.targetFieldId),
+      at,
+    );
+    if (r.ok) {
+      current = r.project;
+      applied++;
+    }
+  }
+  return { project: current, applied, skipped: items.length - applied };
+}

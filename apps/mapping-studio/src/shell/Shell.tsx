@@ -116,6 +116,12 @@ export function Shell() {
   const [, setRemoved] = useState(0); // bumped to re-read the library after a delete
   const library = showProjects ? listProjects() : [];
   const [confirmNew, setConfirmNew] = useState(false);
+  // "Fresh start" is a new project plus a reload, so every screen and setting starts clean.
+  const [reloadAfter, setReloadAfter] = useState(false);
+  const startNew = (reload: boolean) => {
+    newProject();
+    if (reload) window.location.reload();
+  };
   const [openError, setOpenError] = useState<string | undefined>();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
@@ -181,9 +187,26 @@ export function Shell() {
             size="small"
             appearance="outline"
             style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-            onClick={() => (hasWork ? setConfirmNew(true) : newProject())}
+            onClick={() => {
+              setReloadAfter(false);
+              if (hasWork) setConfirmNew(true);
+              else startNew(false);
+            }}
           >
             New project
+          </Button>
+          <Button
+            size="small"
+            appearance="outline"
+            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+            title="Start a new project and refresh the whole screen"
+            onClick={() => {
+              setReloadAfter(true);
+              if (hasWork) setConfirmNew(true);
+              else startNew(true);
+            }}
+          >
+            Fresh start
           </Button>
           <Button
             size="small"
@@ -388,7 +411,7 @@ export function Shell() {
                 appearance="primary"
                 onClick={() => {
                   setConfirmNew(false);
-                  newProject();
+                  startNew(reloadAfter);
                 }}
               >
                 Start new project
