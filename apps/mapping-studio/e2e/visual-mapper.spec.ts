@@ -1,9 +1,18 @@
 import { expect, test, type Page } from '@playwright/test';
-import { openEditor, setUpSmallMapping, status } from './helpers';
+import {
+  addProfitCenterSources,
+  goToStage,
+  loadTarget,
+  openApp,
+  openEditor,
+  setUpSmallMapping,
+  status,
+} from './helpers';
 
 const node = (page: Page, id: string) => page.locator(`[data-id="${id}"]`);
-const srcId = (n: number) => `src|f-CEPC-${n}`; // 1 Profit Center, 2 Valid To, 3 Valid From, 4 Country
-const tgtId = (n: number) => `tgt|tf-Profit-Center-${n}`; // 1 Profit Center, 2 Valid From, 3 Region, 4 Language
+const src = (page: Page, n: number) => page.getByTestId(`src-f-CEPC-${n}`); // 1 Profit Center, 2 Valid To, 3 Valid From, 4 Country
+const tgt = (page: Page, n: number) => page.getByTestId(`tgt-tf-Profit-Center-${n}`); // 1 Profit Center, 2 Valid From, 3 Region, 4 Language
+const link = (page: Page, n: number) => page.getByTestId(`link-tf-Profit-Center-${n}`);
 
 async function mapDirect(page: Page, structure: string, field: string, source: string) {
   await openEditor(page, structure, field);
@@ -14,13 +23,25 @@ async function mapDirect(page: Page, structure: string, field: string, source: s
 
 async function openVisual(page: Page) {
   await page.getByRole('tab', { name: 'Visual Mapper' }).click();
-  await expect(page.getByTestId('visual-canvas')).toBeVisible();
+  await expect(page.getByTestId('mapper')).toBeVisible();
 }
 
-test.describe('Visual Mapper (SPEC-023)', () => {
-  test('renders the canonical mapping: sources, steps and target fields with their links', async ({
+test.describe('Two-panel mapper (SPEC-031)', () => {
+  test('shows every source field on the left and the target fields on the right from the start', async ({
     page,
   }) => {
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    for (const n of [1, 2, 3, 4]) await expect(src(page, n)).toBeVisible();
+    await expect(src(page, 4)).toContainText('Country');
+    await expect(page.getByTestId('dataset-group-CEPC_BUKRS')).toBeVisible();
+    for (const n of [1, 2, 3, 4]) await expect(tgt(page, n)).toBeVisible();
+    await expect(tgt(page, 1)).toContainText('Key');
+    await expect(tgt(page, 1)).toContainText('Unmapped');
+    await expect(page.locator('[data-testid^="link-"]')).toHaveCount(0);
+  });
+
+  test('draws the mapping as lines, and a routine chain gets a function box', async ({ page }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Profit Center', 'CEPC.Profit Center');
     await openEditor(page, 'Profit Center', 'Valid From');
@@ -33,41 +54,34 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     await page.getByLabel('Step 1 settings').fill('{"format":"M/D/YY","twoDigitYearPivot":68}');
     await page.getByRole('button', { name: 'Save mapping' }).click();
     await openVisual(page);
-    await expect(node(page, srcId(1))).toContainText('Profit Center');
-    await expect(node(page, srcId(1))).toContainText('CEPC');
-    await expect(node(page, srcId(3))).toContainText('Valid From');
-    await expect(node(page, 'step|m-tf-Profit-Center-2|0')).toContainText('Parse Date');
-    for (const n of [1, 2, 3, 4]) await expect(node(page, tgtId(n))).toBeVisible();
-    await expect(node(page, tgtId(3))).toContainText('Not mapped');
-    await expect(node(page, tgtId(2))).toContainText('Routine');
-    // source to target (1 link), and source to step to target (2 links)
-    await expect(page.locator('.react-flow__edge')).toHaveCount(3);
+    await expect(link(page, 1)).toHaveCount(1); // a direct copy: one line, no box
+    await expect(page.getByTestId('fn-tf-Profit-Center-1')).toHaveCount(0);
+    await expect(page.getByTestId('fn-tf-Profit-Center-2')).toContainText('Parse Date');
+    await expect(link(page, 2)).toHaveCount(2); // source to box, box to target
+    await expect(tgt(page, 1)).toContainText('Mapped');
+    await expect(tgt(page, 3)).toContainText('Unmapped');
   });
 
-  test('all source fields are on the canvas from the start, so a link can be drawn at once', async ({
+  test('a constant has a function box and no source line', async ({ page }) => {
+    await setUpSmallMapping(page);
+    await openEditor(page, 'Profit Center', 'Language');
+    await page.getByLabel('Mapping type').selectOption('constant');
+    await page.getByLabel('Constant value').fill('EN');
+    await page.getByRole('button', { name: 'Save mapping' }).click();
+    await openVisual(page);
+    await expect(page.getByTestId('fn-tf-Profit-Center-4')).toContainText('Constant');
+    await expect(link(page, 4)).toHaveCount(1); // only box to target
+  });
+
+  test('dragging a source field onto a target field creates a mapping the table also shows', async ({
     page,
   }) => {
     await setUpSmallMapping(page);
     await openVisual(page);
-    await expect(page.getByLabel('Show all source fields')).toBeChecked();
-    for (const n of [1, 2, 3, 4]) await expect(node(page, srcId(n))).toBeVisible();
-    await expect(page.locator('.react-flow__edge')).toHaveCount(0);
-  });
-
-  test('connecting a source field to an unmapped target field creates a mapping the table also shows', async ({
-    page,
-  }) => {
-    await setUpSmallMapping(page);
-    await openVisual(page);
-    await page.getByLabel('Show all source fields').check();
-    await expect(node(page, srcId(4))).toContainText('Country');
-    await node(page, srcId(4))
-      .locator('.source')
-      .dragTo(node(page, tgtId(3)).locator('.target'));
+    await src(page, 4).dragTo(tgt(page, 3));
     await expect(page.getByTestId('graph-message')).toHaveText('Mapping created.');
-    await expect(page.locator('.react-flow__edge')).toHaveCount(1);
-    await expect(node(page, tgtId(3))).toContainText('Direct');
-    // the same mapping is in the Mapping Table
+    await expect(link(page, 3)).toHaveCount(1);
+    await expect(tgt(page, 3)).toContainText('Mapped');
     await page.getByRole('tab', { name: 'Mapping Table' }).click();
     await expect(status(page, 'Profit Center', 'Region')).toHaveText('Mapped');
     await expect(page.getByTestId('row-Profit Center-Region')).toContainText('CEPC.Country');
@@ -76,24 +90,32 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     );
   });
 
+  test('clicking a source field and then a target field also maps them', async ({ page }) => {
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    await src(page, 4).click();
+    await expect(page.getByTestId('pick-target')).toContainText('CEPC.Country is selected');
+    await tgt(page, 4).click();
+    await expect(page.getByTestId('graph-message')).toHaveText('Mapping created.');
+    await expect(page.getByTestId('pick-target')).toHaveCount(0);
+    await expect(link(page, 4)).toHaveCount(1);
+  });
+
   test('a mapping made in the table appears in the picture without any extra step', async ({
     page,
   }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
     await openVisual(page);
-    await expect(node(page, tgtId(4))).toContainText('Direct');
-    await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+    await expect(tgt(page, 4)).toContainText('Mapped');
+    await expect(link(page, 4)).toHaveCount(1);
   });
 
   test('a mapped target is not overwritten by a stray drag', async ({ page }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Profit Center', 'CEPC.Profit Center');
     await openVisual(page);
-    await page.getByLabel('Show all source fields').check();
-    await node(page, srcId(4))
-      .locator('.source')
-      .dragTo(node(page, tgtId(1)).locator('.target'));
+    await src(page, 4).dragTo(tgt(page, 1));
     await expect(page.getByTestId('graph-message')).toContainText(
       '"Profit Center" already has a mapping',
     );
@@ -107,28 +129,60 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
     await openVisual(page);
-    await node(page, tgtId(4)).click();
+    await tgt(page, 4).click();
     await expect(page.getByTestId('target-panel')).toContainText('Language');
     await expect(page.getByTestId('target-panel')).toContainText('CEPC.Country');
     await page.getByRole('button', { name: 'Edit mapping' }).click();
     await expect(page.getByTestId('mapping-editor')).toBeVisible();
     await expect(page.getByLabel('Source field', { exact: true })).toHaveValue('ds-CEPC|f-CEPC-4');
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await node(page, tgtId(4)).click();
     await page.getByRole('button', { name: 'Remove mapping' }).click();
-    await expect(page.locator('.react-flow__edge')).toHaveCount(0);
+    await expect(link(page, 4)).toHaveCount(0);
     await page.getByRole('tab', { name: 'Mapping Table' }).click();
     await expect(status(page, 'Profit Center', 'Language')).toHaveText('Unmapped');
   });
 
-  test('a link can be selected and deleted with the keyboard', async ({ page }) => {
+  test('clicking a line selects its target, and Delete removes the mapping', async ({ page }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
     await openVisual(page);
-    await page.locator('.react-flow__edge').first().click({ force: true });
-    await page.keyboard.press('Backspace');
+    await link(page, 4).click({ force: true });
+    await expect(page.getByTestId('target-panel')).toContainText('Language');
+    await page.keyboard.press('Delete');
     await expect(page.getByTestId('graph-message')).toHaveText('Mapping removed.');
-    await expect(page.locator('.react-flow__edge')).toHaveCount(0);
+    await expect(link(page, 4)).toHaveCount(0);
+  });
+
+  test('a hidden or collapsed source keeps its line', async ({ page }) => {
+    await setUpSmallMapping(page);
+    await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
+    await openVisual(page);
+    await page.getByLabel('Search source fields').fill('Valid');
+    await expect(src(page, 4)).toHaveCount(0);
+    await expect(src(page, 3)).toBeVisible();
+    await expect(link(page, 4)).toHaveCount(1);
+    await page.getByLabel('Search source fields').fill('');
+    await page.getByTestId('dataset-group-CEPC').click();
+    await expect(src(page, 1)).toHaveCount(0);
+    await expect(link(page, 4)).toHaveCount(1);
+    await page.getByTestId('dataset-group-CEPC').click();
+    await expect(src(page, 4)).toBeVisible();
+  });
+
+  test('target fields can be searched and filtered to the unmapped ones', async ({ page }) => {
+    await setUpSmallMapping(page);
+    await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
+    await openVisual(page);
+    await page.getByLabel('Show target fields').selectOption('unmapped');
+    await expect(tgt(page, 4)).toHaveCount(0);
+    await expect(tgt(page, 3)).toBeVisible();
+    await page.getByLabel('Show target fields').selectOption('requiredUnmapped');
+    await expect(tgt(page, 3)).toHaveCount(0); // Region is optional
+    await expect(tgt(page, 1)).toBeVisible();
+    await page.getByLabel('Show target fields').selectOption('all');
+    await page.getByLabel('Search target fields').fill('lang');
+    await expect(tgt(page, 4)).toBeVisible();
+    await expect(tgt(page, 1)).toHaveCount(0);
   });
 
   test('the structure can be changed; each structure has its own picture', async ({ page }) => {
@@ -136,35 +190,74 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
     await mapDirect(page, 'Company Codes', 'Company Code', 'CEPC_BUKRS.Company Code');
     await openVisual(page);
-    await expect(node(page, tgtId(4))).toBeVisible();
+    await expect(tgt(page, 4)).toBeVisible();
     await page.getByLabel('Structure', { exact: true }).selectOption({ label: 'Company Codes' });
-    await expect(node(page, 'tgt|tf-Company-Codes-2')).toContainText('Direct');
-    await expect(node(page, tgtId(4))).toHaveCount(0);
+    await expect(page.getByTestId('tgt-tf-Company-Codes-2')).toContainText('Mapped');
+    await expect(tgt(page, 4)).toHaveCount(0);
+    await expect(page.getByTestId('link-tf-Company-Codes-2')).toHaveCount(1);
   });
 
-  test('dragging a node keeps its place when switching views and coming back (layout is remembered)', async ({
+  test('Suggest mappings proposes sources with reasons; Accept maps, Reject drops, nothing is automatic', async ({
     page,
   }) => {
     await setUpSmallMapping(page);
-    await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
     await openVisual(page);
-    const target = node(page, tgtId(4));
-    const before = (await target.boundingBox())!;
-    await target.hover();
-    await page.mouse.down();
-    await page.mouse.move(before.x + 40, before.y + 120, { steps: 12 });
-    await page.mouse.up();
-    const moved = (await target.boundingBox())!;
-    // the canvas may pan a little while dragging near its edge, so only require a clear move
-    expect(Math.abs(moved.y - before.y)).toBeGreaterThan(20);
-    // the view is fitted (and zoomed) again when the picture is reopened, so compare with a node that was not moved
-    const anchor = (await node(page, tgtId(1)).boundingBox())!;
-    const offset = (moved.y - anchor.y) / anchor.height; // in node heights, so zoom does not matter
-    await page.getByRole('tab', { name: 'Mapping Table' }).click();
+    await page.getByRole('button', { name: 'Suggest mappings' }).click();
+    const list = page.getByTestId('suggestions');
+    // Profit Center and Valid From have a source with the same name; Region and Language have none
+    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toContainText(
+      'CEPC.Profit Center',
+    );
+    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toContainText('same name');
+    await expect(page.getByTestId('suggestion-tf-Profit-Center-2')).toContainText(
+      'CEPC.Valid From',
+    );
+    await expect(page.locator('[data-testid^="suggestion-tf-Profit-Center-"]')).toHaveCount(2);
+    await expect(page.getByTestId('suggest-tf-Profit-Center-1')).toHaveCount(1); // dashed line
+    await expect(page.getByTestId('score-tf-Profit-Center-1')).toBeVisible();
+    // not mapped yet
+    await expect(tgt(page, 1)).toContainText('Unmapped');
+
+    await page
+      .getByTestId('suggestion-tf-Profit-Center-1')
+      .getByRole('button', { name: 'Accept' })
+      .click();
+    await expect(page.getByTestId('graph-message')).toHaveText('1 mapping created.');
+    await expect(tgt(page, 1)).toContainText('Mapped');
+    await expect(link(page, 1)).toHaveCount(1);
+    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toHaveCount(0);
+
+    await page
+      .getByTestId('suggestion-tf-Profit-Center-2')
+      .getByRole('button', { name: 'Reject' })
+      .click();
+    await expect(page.getByTestId('suggestion-tf-Profit-Center-2')).toHaveCount(0);
+    await expect(tgt(page, 2)).toContainText('Unmapped');
+    await expect(list).toContainText('No open suggestions');
+  });
+
+  test('on the real Profit Center files, Accept all applies only the strong suggestions', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await addProfitCenterSources(page, true);
+    await loadTarget(page);
+    await goToStage(page, 'map');
     await openVisual(page);
-    const again = (await node(page, tgtId(4)).boundingBox())!;
-    const anchorAgain = (await node(page, tgtId(1)).boundingBox())!;
-    expect(Math.abs((again.y - anchorAgain.y) / anchorAgain.height - offset)).toBeLessThan(0.3);
+    await page.getByRole('button', { name: 'Suggest mappings' }).click();
+    const rows = page.locator('[data-testid^="suggestion-"]');
+    const before = await rows.count();
+    expect(before).toBeGreaterThan(15);
+    // key fields match on name, data type and key: strong. "Printer" only shares words with "Printer name": weaker.
+    await expect(rows.filter({ hasText: 'Profit Center.Printer' })).toHaveCount(0);
+    await page.getByRole('button', { name: /Accept all at 70% or more/ }).click();
+    await expect(page.getByTestId('graph-message')).toContainText('mappings created');
+    const after = await rows.count();
+    expect(after).toBeGreaterThan(0); // the weaker ones are still waiting for a decision
+    expect(after).toBeLessThan(before);
+    await expect(rows.filter({ hasText: 'the names share words' }).first()).toBeVisible();
+    // the weak ones were not applied, the strong ones were
+    await expect(page.getByTestId('stage-map-summary')).toHaveText(/^[1-9]\d* of 39 fields mapped/);
   });
 
   test('the joins picture shows datasets and joins; a join can be confirmed from it', async ({

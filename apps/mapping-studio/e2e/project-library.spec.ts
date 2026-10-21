@@ -43,4 +43,22 @@ test.describe('Project library (M10)', () => {
     await page.getByRole('button', { name: 'Delete New migration project' }).click();
     await expect(page.getByTestId('projects-empty')).toBeVisible();
   });
+
+  test('Fresh start refreshes the whole screen with a new empty project and keeps the old one in Projects', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await addSmallSources(page);
+    await page.getByRole('button', { name: 'Rename' }).click();
+    await page.getByLabel('Project name').fill('Before refresh');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForTimeout(500); // autosave
+    await page.getByRole('button', { name: 'Fresh start' }).click();
+    await page.getByRole('button', { name: 'Start new project' }).click();
+    await expect(page.getByTestId('project-name')).toHaveText('New migration project');
+    await expect(page.getByTestId('stage-sources-summary')).toHaveText('No files yet');
+    await expect(page.getByTestId('restored-banner')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await expect(page.getByTestId('project-Before refresh')).toBeVisible();
+  });
 });
