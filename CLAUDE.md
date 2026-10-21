@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) are done. Next: M4 mapping types (SPEC-009 to 013). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
+M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) and M4 (`packages/transformation-engine`) are done. Next: M5 routines (SPEC-014 to 019). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
 
 ## Commands
 
