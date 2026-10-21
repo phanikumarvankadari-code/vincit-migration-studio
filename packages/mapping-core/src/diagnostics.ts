@@ -16,6 +16,8 @@ export const DiagnosticSchema = z.strictObject({
   datasetId: SourceDatasetIdSchema.optional(),
   /** 1-based data row number, header excluded. */
   sourceRow: z.number().int().positive().optional(),
+  /** 1-based row in the output of targetStructureId. Absent for rows that were not produced. */
+  targetRow: z.number().int().positive().optional(),
   sourceFieldId: SourceFieldIdSchema.optional(),
   sourceValue: z.string().nullable().optional(),
   targetStructureId: TargetStructureIdSchema.optional(),

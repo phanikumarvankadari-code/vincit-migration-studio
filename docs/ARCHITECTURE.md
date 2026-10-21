@@ -348,3 +348,21 @@ Implemented in `packages/mapping-core`.
 - **Relationship analysis** compares data on the keys: matching and unmatched rows, key uniqueness per side, blank-key rows (which never match), and the cardinality the data implies. `checkRelationship` reports unknown datasets or fields and repeated key pairs as errors; many-to-many, datatype mismatch, declared cardinality different from the data, no matching values and blank keys as warnings.
 - **Suggestions** score each field pair from technical-name match (dictionary), display-name match, key on both sides and shared values. Pairs that hold one single value everywhere are left out unless both sides declare a key. Every suggestion has status `suggested` with plain-language evidence and diagnostics, and never becomes `confirmed` without `confirmRelationship`. The sample data shows the diagnostics at work: no key value is shared between the three Profit Center files, and the Client key is blank on two CEPC rows.
 - **Not here:** executing joins (mapping engine, M4+), AI-based suggestions, visual editing.
+
+
+---
+
+## 17. Mapping Engine Decisions (SPEC-009 to 013)
+
+Implemented in `@mms/transformation-engine` (depends only on `@mms/mapping-core`; no Node, DOM, clock, randomness or code evaluation). `executeMapping(model, rows, options)` returns a `Result<ExecutionResult>`.
+
+- **Preconditions:** the model must pass `validateModel` and the rows must match the dataset fields. Otherwise nothing runs and diagnostics are returned.
+- **Driver and rows:** each target structure has a driver dataset (`generation.driverDatasetId`, or the one dataset its mappings read; otherwise `ENGINE_NO_DRIVER`). One output row per driver row, in driver order. A parent with three children in the driver dataset gives three rows; a parent with none gives none. Rows stay in a `TargetRows` table tied to their structure and record the driver row number.
+- **Joins:** other datasets are reached through **confirmed** relationships only (suggested or rejected ones are ignored, so human confirmation matters), by the shortest path in relationship order. `generation.viaRelationshipIds` limits which relationships a structure may use. Key parts that are blank never match. Left join with no match keeps the row with blanks. Inner join with no match, or a join entered from the right-hand side, drops the row with `ENGINE_ROW_DROPPED`. Several matches use the first and warn. Nothing is dropped silently.
+- **Mapping types:** direct (value unchanged); constant (typed value written as text); lookup (exact key; missing-value behaviors: error and warning give a diagnostic and a blank, keepSource keeps the source, null is blank, default writes the default; a blank key counts as a miss); conditional (first matching rule wins, `current` is the first source reference, no match and no otherwise gives a blank plus an info diagnostic). Comparison: eq/ne exact text, ordering numeric when both sides are plain numbers, otherwise text; an empty value (null or `''`) is never ordered. `isEmpty` means null or `''` (spaces are a value).
+- **Chains:** after the primary operation, steps run in `order`. Routine steps use a `RoutineRegistry` (implementations arrive in M5); a missing implementation is an error, never a silent pass-through. `onError: stop` ends the chain with an error and a blank; `continue` skips the step with a warning. Custom JavaScript runs only through an injected `JavaScriptExecutor` (the sandbox arrives in SPEC-019).
+- **Diagnostics and status:** every problem carries dataset, driver source row, target structure, target field, mapping, target row (when produced) and, where it applies, the routine. Row status is error, warning or ready, per row, so generated rows are judged independently.
+- **Lineage** (`collectLineage: true`): per target value, the source cells with their 1-based row numbers (also across joins) and each step with input and output. It is off by default because it costs memory on large runs.
+- **Repeatable:** same model, rows and options give the same result; the model and rows are never changed.
+- **Core additions (additive):** `Diagnostic.targetRow`, `CellLineage` / `LineageStep`.
+- **Not here:** routine implementations (M5), the JavaScript sandbox (M5), validation rules execution and key checks (M6 and later), and file output (M8).
