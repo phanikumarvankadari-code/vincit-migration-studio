@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-M0 (tooling, docs) and M1 (SPEC-001 canonical model, `packages/mapping-core`) are done. Next: M2 sources (SPEC-002 to 005). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
+M0 (tooling, docs), M1 (canonical model, `packages/mapping-core`) and M2 (sources: `packages/file-import`, `packages/profiler`) are done. Next: M3 relationships and targets (SPEC-006 to 008). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
 
 ## Commands
 
@@ -21,7 +21,7 @@ npm run coverage         # v8 coverage
 
 One branch per milestone (`milestone/mN-name`). Merge to `main` only after tests pass. Test cases for each milestone live in `tests/milestones/<mN-name>/` (with a README). Playwright for web milestones. No git remote yet; do not push. A separate Python tracker is at `../milestone-tracker/` (outside Git): update item statuses as work completes.
 
-Sample fixtures (Profit Center): `test-data/profit-center/{input,target}/`. CEPC_BUKRS.csv has 10 columns but the dictionary lists 12 fields, which is intentional warning-case data. Source CSV headers are display names; link to dictionary fields by column position.
+Sample fixtures (Profit Center): `test-data/profit-center/{input,target}/`. CSV headers are display names. Dictionary fields are matched by column order after skipping `.INCLUDE` placeholders (CEPC_BUKRS: 12 dictionary rows, 10 real fields, 10 CSV columns).
 
 ## What the Product Is
 

@@ -320,3 +320,18 @@ Implemented in `packages/mapping-core`.
 - **Serialization:** JSON envelope `{ format, schemaVersion: 1, <body> }`, canonical key order from the schema, 2-space indent, trailing newline. Newer schema versions are rejected. Golden file: `packages/mapping-core/test/fixtures/profit-center.project.json`. Do not run Prettier on it.
 - **Boundaries:** core imports only `zod` and relative modules; `tsconfig` has no DOM lib and no Node types for `src`. Enforced by `boundaries.test.ts`.
 - **Deviations from the SPEC-001 minimums (additive):** `Diagnostic.path`, `RunResult.inputRecordCounts` (per dataset), `RunResult.generatedFiles`, `SourceDefinition.fingerprint`, `nativeType` on fields, `Relationship.status` values `suggested|confirmed|rejected`.
+
+
+---
+
+## 15. Source Import and Profiling Decisions (SPEC-002 to 005)
+
+- **Packages:** `@mms/file-import` (CSV, XLSX, field dictionary) and `@mms/profiler`. Both depend on `@mms/mapping-core` and, like it, use no Node or DOM APIs: importers take decoded text (CSV) or bytes (XLSX), never paths. Reading files is the caller's job.
+- **Row data** lives outside the model: `SourceRows` (in mapping-core) holds `{ datasetId, fieldIds, rows }` with `string | null` cells. The project never stores rows.
+- **Blank vs empty:** an unquoted empty CSV cell and an empty Excel cell are `null`. A quoted empty CSV cell (`""`) is `''`. Values are never trimmed or converted. Leading zeros survive because nothing is parsed to numbers.
+- **Nothing dropped silently:** short rows are padded with `null` (warning). Over-long rows are cut (error) and the dropped values are recorded in `technicalDetails`. Blank or duplicate headers are kept and reported.
+- **Excel dates:** date-formatted cells become ISO 8601 text (1900 and 1904 systems) with an info diagnostic per column; the non-existent 1900-02-29 stays as the raw number with a warning.
+- **IDs** are deterministic from names (`src-CEPC`, `ds-CEPC`, `f-CEPC-3`), so re-importing gives identical IDs. Names must be unique within a project. Equal sheet-name slugs get a numeric suffix.
+- **Field dictionary:** column names are configurable (defaults follow the SAP DD03L export). Dictionary entries are matched to dataset columns by order, after skipping placeholder rows whose field name starts with `.` (SAP `.INCLUDE`). Count mismatch, ambiguous entries and unknown tables are reported as diagnostics; enrichment never replaces display names and never blocks an import.
+- **Profiler** reads rows and returns a `DatasetProfile`: null/empty/filled counts, fill %, distinct count, uniqueness, inferred datatype, min/max length, representative values (most frequent first). Datatype inference never guesses: leading-zero numbers stay `string`, and non-ISO dates such as `1/1/26` stay `string`.
+- **New dependencies:** `fflate` (unzip) and `fast-xml-parser` (XLSX XML), both pure JavaScript and browser-safe.
