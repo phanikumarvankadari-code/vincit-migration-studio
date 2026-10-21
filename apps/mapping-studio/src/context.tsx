@@ -28,7 +28,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { MIME, clearStored, downloadFile, loadStored, store, type Stored } from './lib/storage';
+import {
+  MIME,
+  clearStored,
+  downloadFile,
+  loadFromLibrary,
+  loadStored,
+  saveToLibrary,
+  store,
+  type Stored,
+} from './lib/storage';
 
 type WithoutAt<A> = A extends { at: string } ? Omit<A, 'at'> : A;
 export type StudioEvent = WithoutAt<StudioAction>;
@@ -54,6 +63,8 @@ export interface StudioApi {
   startup: Stored;
   dismissStartup: () => void;
   newProject: () => void;
+  /** Opens a project kept in this browser's library. Returns a message when it cannot be read. */
+  openLibraryProject: (id: string) => string | undefined;
   saveProjectFile: () => void;
   openProjectFile: (file: File) => Promise<string | undefined>;
 }
@@ -157,14 +168,29 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     }
     const timer = window.setTimeout(() => {
       const at = nowIso();
-      const result = store(
-        encodeWorkspace({
-          project: state.project,
-          snapshots: [...state.snapshots],
-          dictionary: state.dictionary,
-          savedAt: at,
-        }),
-      );
+      const text = encodeWorkspace({
+        project: state.project,
+        snapshots: [...state.snapshots],
+        dictionary: state.dictionary,
+        savedAt: at,
+      });
+      const result = store(text);
+      const hasWork =
+        state.project.sourceDefinitions.length > 0 ||
+        (state.project.targetDefinition?.structures.length ?? 0) > 0 ||
+        state.project.mappingDefinition.mappings.length > 0 ||
+        state.snapshots.length > 0;
+      if (result.ok && hasWork) {
+        saveToLibrary(
+          {
+            id: state.project.id,
+            name: state.project.name,
+            businessEntity: state.project.businessEntity,
+            savedAt: at,
+          },
+          text,
+        );
+      }
       setSaveStatus(
         result.ok ? { state: 'saved', at } : { state: 'error', message: result.message },
       );
@@ -185,6 +211,20 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setLastOutput(undefined);
     setStartup({ kind: 'none' });
     setStage('sources');
+  }, []);
+
+  const openLibraryProject = useCallback((id: string): string | undefined => {
+    const r = loadFromLibrary(id);
+    if (r.kind !== 'ok') {
+      return r.kind === 'unreadable'
+        ? r.reason
+        : 'That project is no longer saved in this browser.';
+    }
+    dispatch({ type: 'workspaceLoaded', workspace: r.workspace });
+    setLastOutput(undefined);
+    setStartup({ kind: 'ok', workspace: r.workspace });
+    setStage('sources');
+    return undefined;
   }, []);
 
   const saveProjectFile = useCallback(() => {
@@ -228,6 +268,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       startup,
       dismissStartup: () => setStartup({ kind: 'none' }),
       newProject,
+      openLibraryProject,
       saveProjectFile,
       openProjectFile,
     }),
@@ -245,6 +286,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       saveStatus,
       startup,
       newProject,
+      openLibraryProject,
       saveProjectFile,
       openProjectFile,
     ],

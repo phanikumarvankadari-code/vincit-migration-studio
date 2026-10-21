@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) M4 (`packages/transformation-engine`) and M5 (`packages/routine-library`, `packages/js-sandbox`) and M6 (`packages/test-engine`) and M7 (`packages/studio-model`, `apps/mapping-studio`) and M8 (snapshots, `packages/file-export`, `packages/local-run`, golden scenario) are done. and M9 (container, `container/`, `npm run e2e:container`) are done. All planned milestones complete. The sandbox tests need no extra setup (QuickJS WASM ships with the npm package). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
+M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) M4 (`packages/transformation-engine`) and M5 (`packages/routine-library`, `packages/js-sandbox`) and M6 (`packages/test-engine`) and M7 (`packages/studio-model`, `apps/mapping-studio`) and M8 (snapshots, `packages/file-export`, `packages/local-run`, golden scenario) are done. and M9 (container, `container/`, `npm run e2e:container`) are done. M10 (project library in the browser, Visual Mapper shows all sources) is done. All planned milestones complete. The sandbox tests need no extra setup (QuickJS WASM ships with the npm package). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
 
 ## Commands
 

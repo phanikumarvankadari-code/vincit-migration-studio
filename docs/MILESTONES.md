@@ -17,6 +17,7 @@ Each milestone ends with a demo check: something you can run or see.
 | M7 | Screen | 021 app shell, 022 mapping table, 023 React Flow view, 024 result grid, 025 validation, 026 lineage | Table and Visual Mapper both edit one mapping. Result grid plus diagnostics list. Click a value to trace it to source. |
 | M8 ✅ | Finish | 027 snapshots, 028 local output, 029 Profit Center end-to-end | Named snapshot, Ready/Approved, full run writes target files plus an error file. |
 | M9 ✅ | Container | 030 container packaging | `docker build` produces an image. `docker run` serves the app on localhost. Projects and files live on a mounted volume. Playwright smoke test passes against the running container. |
+| M10 ✅ | Project library | – | Earlier projects are listed under Projects and can be opened again. The Visual Mapper shows every source field so a link can be drawn at once. |
 
 ## Decisions already made
 
