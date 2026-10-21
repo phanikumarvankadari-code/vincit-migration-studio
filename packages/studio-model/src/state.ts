@@ -1,0 +1,350 @@
+import {
+  IsoDateTimeSchema,
+  type Diagnostic,
+  type LookupDefinition,
+  type FieldMapping,
+  type ParentLink,
+  type Project,
+  type Relationship,
+  type RowGeneration,
+  type SourceRows,
+  type TargetDefinition,
+} from '@mms/mapping-core';
+import { applyFieldDictionary, type FieldDictionary, type ImportedSource } from '@mms/file-import';
+import { suggestRelationships, type DatasetData } from '@mms/relationships';
+import type { TestRunResult } from '@mms/test-engine';
+import { pruneDangling, removeMapping, upsertLookup, upsertMapping } from './edit.js';
+
+/**
+ * Everything the app knows. Row data stays here (in memory) and is never part of the project.
+ * All changes go through `reduce`, a pure function, so the behavior can be tested without a browser.
+ */
+export interface StudioState {
+  project: Project;
+  /** Rows by dataset ID. */
+  data: Readonly<Record<string, SourceRows>>;
+  dictionary: FieldDictionary | undefined;
+  /** Import and dictionary diagnostics by source ID (and "dictionary"). */
+  importDiagnostics: Readonly<Record<string, readonly Diagnostic[]>>;
+  /** Why a suggested relationship was proposed, by relationship ID. */
+  suggestionNotes: Readonly<
+    Record<string, { score: number; evidence: string[]; diagnostics: Diagnostic[] }>
+  >;
+  lastRun: TestRunResult | undefined;
+  /** The project changed since lastRun, so its results may be out of date. */
+  runStale: boolean;
+}
+
+export type StudioAction =
+  | { type: 'projectRenamed'; name: string; businessEntity: string; at: string }
+  | { type: 'sourceAdded'; imported: ImportedSource; at: string }
+  | { type: 'sourceRemoved'; sourceId: string; at: string }
+  | {
+      type: 'dictionaryLoaded';
+      dictionary: FieldDictionary;
+      diagnostics: readonly Diagnostic[];
+      at: string;
+    }
+  | {
+      type: 'relationshipDecided';
+      relationshipId: string;
+      status: Relationship['status'];
+      at: string;
+    }
+  | {
+      type: 'relationshipJoinType';
+      relationshipId: string;
+      joinType: Relationship['joinType'];
+      at: string;
+    }
+  | { type: 'targetLoaded'; target: TargetDefinition; at: string }
+  | {
+      type: 'structureSettings';
+      structureId: string;
+      generation: RowGeneration | null;
+      parent: ParentLink | null;
+      at: string;
+    }
+  | {
+      type: 'mappingSaved';
+      mapping: FieldMapping;
+      lookups?: readonly LookupDefinition[];
+      at: string;
+    }
+  | { type: 'mappingRemoved'; structureId: string; fieldId: string; at: string }
+  | { type: 'lookupSaved'; lookup: LookupDefinition; at: string }
+  | { type: 'projectEdited'; project: Project }
+  | { type: 'runFinished'; run: TestRunResult };
+
+export function createStudioState(args: {
+  id: string;
+  name: string;
+  businessEntity: string;
+  at: string;
+}): StudioState {
+  const at = IsoDateTimeSchema.parse(args.at);
+  return {
+    project: {
+      id: args.id as Project['id'],
+      name: args.name,
+      businessEntity: args.businessEntity,
+      projectState: 'draft',
+      createdAt: at,
+      updatedAt: at,
+      sourceDefinitions: [],
+      mappingDefinition: {
+        id: 'md-1' as Project['mappingDefinition']['id'],
+        mappings: [],
+        relationships: [],
+        routineReferences: [],
+        lookupReferences: [],
+        validationRules: [],
+      },
+      routines: [],
+      lookups: [],
+    },
+    data: {},
+    dictionary: undefined,
+    importDiagnostics: {},
+    suggestionNotes: {},
+    lastRun: undefined,
+    runStale: false,
+  };
+}
+
+const withProject = (
+  s: StudioState,
+  project: Project,
+  extra: Partial<StudioState> = {},
+): StudioState => ({
+  ...s,
+  ...extra,
+  project,
+  runStale: s.lastRun !== undefined,
+});
+
+function allDatasets(state: StudioState): DatasetData[] {
+  return state.project.sourceDefinitions.flatMap((s) =>
+    s.datasets.flatMap((dataset) => {
+      const rows = state.data[dataset.id];
+      return rows ? [{ dataset, rows }] : [];
+    }),
+  );
+}
+
+/**
+ * Keeps relationship suggestions in step with the sources. Decided relationships (confirmed or rejected) are never
+ * overwritten; suggested ones are refreshed (for example when a field dictionary adds technical names).
+ */
+function syncRelationships(state: StudioState, at: string): StudioState {
+  const suggestions = suggestRelationships(allDatasets(state));
+  const existing = state.project.mappingDefinition.relationships;
+  const decided = existing.filter((r) => r.status !== 'suggested');
+  const decidedIds = new Set(decided.map((r) => r.id as string));
+  const fresh = suggestions
+    .filter((x) => !decidedIds.has(x.relationship.id))
+    .map((x) => x.relationship);
+  const notes = Object.fromEntries(
+    suggestions.map((x) => [
+      x.relationship.id,
+      { score: x.score, evidence: x.evidence, diagnostics: x.diagnostics },
+    ]),
+  );
+  const project: Project = {
+    ...state.project,
+    updatedAt: at as Project['updatedAt'],
+    mappingDefinition: {
+      ...state.project.mappingDefinition,
+      relationships: [...decided, ...fresh],
+    },
+  };
+  return { ...state, project: pruneDangling(project), suggestionNotes: notes };
+}
+
+export function reduce(state: StudioState, action: StudioAction): StudioState {
+  const stamp = (p: Project, at: string): Project => ({
+    ...p,
+    updatedAt: at as Project['updatedAt'],
+  });
+  switch (action.type) {
+    case 'projectRenamed':
+      return withProject(
+        state,
+        stamp(
+          { ...state.project, name: action.name, businessEntity: action.businessEntity },
+          action.at,
+        ),
+      );
+
+    case 'sourceAdded': {
+      const { source, rows, diagnostics } = action.imported;
+      const old = state.project.sourceDefinitions.find((s) => s.id === source.id);
+      const oldIds = new Set(old?.datasets.map((d) => d.id as string) ?? []);
+      let enriched = source;
+      let dictDiagnostics: readonly Diagnostic[] = [];
+      if (state.dictionary) {
+        const applied = applyFieldDictionary(source, state.dictionary);
+        enriched = applied.source;
+        dictDiagnostics = applied.diagnostics;
+      }
+      const data: Record<string, SourceRows> = Object.fromEntries(
+        Object.entries(state.data).filter(([id]) => !oldIds.has(id)),
+      );
+      for (const r of rows) data[r.datasetId] = r;
+      const sources = old
+        ? state.project.sourceDefinitions.map((s) => (s.id === source.id ? enriched : s))
+        : [...state.project.sourceDefinitions, enriched];
+      const next = withProject(
+        state,
+        stamp({ ...state.project, sourceDefinitions: sources }, action.at),
+        {
+          data,
+          importDiagnostics: {
+            ...state.importDiagnostics,
+            [source.id]: [...diagnostics, ...dictDiagnostics],
+          },
+        },
+      );
+      return syncRelationships(next, action.at);
+    }
+
+    case 'sourceRemoved': {
+      const gone = state.project.sourceDefinitions.find((s) => s.id === action.sourceId);
+      if (!gone) return state;
+      const ids = new Set(gone.datasets.map((d) => d.id as string));
+      const data = Object.fromEntries(Object.entries(state.data).filter(([id]) => !ids.has(id)));
+      const diag = Object.fromEntries(
+        Object.entries(state.importDiagnostics).filter(([k]) => k !== action.sourceId),
+      );
+      const project = pruneDangling(
+        stamp(
+          {
+            ...state.project,
+            sourceDefinitions: state.project.sourceDefinitions.filter(
+              (s) => s.id !== action.sourceId,
+            ),
+          },
+          action.at,
+        ),
+      );
+      return syncRelationships(
+        withProject(state, project, { data, importDiagnostics: diag }),
+        action.at,
+      );
+    }
+
+    case 'dictionaryLoaded': {
+      const diagnostics: Record<string, readonly Diagnostic[]> = {
+        ...state.importDiagnostics,
+        dictionary: action.diagnostics,
+      };
+      let sources = state.project.sourceDefinitions;
+      sources = sources.map((s) => {
+        const applied = applyFieldDictionary(s, action.dictionary);
+        diagnostics[s.id] = [
+          ...(state.importDiagnostics[s.id] ?? []).filter((d) => !d.code.startsWith('DICT_')),
+          ...applied.diagnostics,
+        ];
+        return applied.source;
+      });
+      const next = withProject(
+        state,
+        stamp({ ...state.project, sourceDefinitions: sources }, action.at),
+        { dictionary: action.dictionary, importDiagnostics: diagnostics },
+      );
+      return syncRelationships(next, action.at);
+    }
+
+    case 'relationshipDecided': {
+      const relationships = state.project.mappingDefinition.relationships.map((r) =>
+        r.id === action.relationshipId ? { ...r, status: action.status } : r,
+      );
+      return withProject(
+        state,
+        stamp(
+          {
+            ...state.project,
+            mappingDefinition: { ...state.project.mappingDefinition, relationships },
+          },
+          action.at,
+        ),
+      );
+    }
+
+    case 'relationshipJoinType': {
+      const relationships = state.project.mappingDefinition.relationships.map((r) =>
+        r.id === action.relationshipId ? { ...r, joinType: action.joinType } : r,
+      );
+      return withProject(
+        state,
+        stamp(
+          {
+            ...state.project,
+            mappingDefinition: { ...state.project.mappingDefinition, relationships },
+          },
+          action.at,
+        ),
+      );
+    }
+
+    case 'targetLoaded': {
+      const previous = new Map(
+        (state.project.targetDefinition?.structures ?? []).map((s) => [s.id as string, s]),
+      );
+      const structures = action.target.structures.map((s) => {
+        const old = previous.get(s.id);
+        return {
+          ...s,
+          ...(old?.generation && !s.generation ? { generation: old.generation } : {}),
+          ...(old?.parent && !s.parent ? { parent: old.parent } : {}),
+        };
+      });
+      const project = pruneDangling(
+        stamp({ ...state.project, targetDefinition: { ...action.target, structures } }, action.at),
+      );
+      return withProject(state, project);
+    }
+
+    case 'structureSettings': {
+      const target = state.project.targetDefinition;
+      if (!target) return state;
+      const structures = target.structures.map((s) => {
+        if (s.id !== action.structureId) return s;
+        const copy = { ...s };
+        delete copy.generation;
+        delete copy.parent;
+        return {
+          ...copy,
+          ...(action.generation ? { generation: action.generation } : {}),
+          ...(action.parent ? { parent: action.parent } : {}),
+        };
+      });
+      return withProject(
+        state,
+        stamp({ ...state.project, targetDefinition: { ...target, structures } }, action.at),
+      );
+    }
+
+    case 'mappingSaved': {
+      let project = state.project;
+      for (const l of action.lookups ?? []) project = upsertLookup(project, l, action.at);
+      return withProject(state, upsertMapping(project, action.mapping, action.at));
+    }
+
+    case 'mappingRemoved':
+      return withProject(
+        state,
+        removeMapping(state.project, action.structureId, action.fieldId, action.at),
+      );
+
+    case 'lookupSaved':
+      return withProject(state, upsertLookup(state.project, action.lookup, action.at));
+
+    case 'projectEdited':
+      // The result of a pure edit (for example from the Visual Mapper). It must already be a consistent project.
+      return withProject(state, action.project);
+
+    case 'runFinished':
+      return { ...state, lastRun: action.run, runStale: false };
+  }
+}

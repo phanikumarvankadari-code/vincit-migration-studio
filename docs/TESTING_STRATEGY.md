@@ -81,3 +81,13 @@ A milestone is merged to `main` only when:
 ## 8. Core Boundary Checks
 
 `mapping-core` must not import UI, browser, Power Platform or AI dependencies (SPEC-001 AC-009). An automated test scans its sources and `package.json`, and the TypeScript config excludes the DOM library and Node typings for source files.
+
+---
+
+## 9. Browser Tests in Practice
+
+- Tool: Playwright (`@playwright/test`) with Chromium. Specs live in `apps/mapping-studio/e2e/*.spec.ts`; run `npm run e2e`. The Vite dev server is started automatically on 127.0.0.1:5173 (an already running one is reused).
+- Select elements by role, accessible name or `data-testid`. Files are loaded through the real file inputs (`setInputFiles`), never by calling internal functions.
+- Anything that is business logic is tested without a browser first (`packages/studio-model`). Browser tests prove the screens, not the rules.
+- Test data: real fixtures for loading and profiling; small purpose-built files (see `e2e/helpers.ts`) for scenarios that need joinable values.
+- Large-result behavior (virtualized grid) is tested with generated files of 5,000 and 100,001 rows.

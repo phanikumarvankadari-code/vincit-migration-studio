@@ -15,7 +15,7 @@ const d = (
 ): Diagnostic => ({ severity, code, message, ...extra }) as Diagnostic;
 
 /** Source datasets a mapping reads (its source references and condition operands). */
-function datasetsRead(m: FieldMapping): string[] {
+export function datasetsRead(m: FieldMapping): string[] {
   const out = new Set<string>(m.sourceReferences.map((r) => r.datasetId));
   const operand = (o: { kind: string; datasetId?: string }): void => {
     if (o.kind === 'field' && o.datasetId) out.add(o.datasetId);
