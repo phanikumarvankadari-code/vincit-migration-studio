@@ -303,3 +303,20 @@ It should not execute transformations row-by-row.
 ## 13. Architecture Rule
 
 If React Flow, Power Apps, AI or Power Automate were removed tomorrow, an approved canonical mapping must still remain understandable and executable by the core engine.
+
+---
+
+## 14. Canonical Model Decisions (SPEC-001)
+
+Implemented in `packages/mapping-core`.
+
+- **Validation:** Zod 4 schemas are the source of truth; types are inferred. Objects are strict (unknown keys rejected). Unions are closed and discriminated (`mappingType`, `kind`, `ruleType`, `scope`).
+- **Two validation layers:** `parseProject` / `parseSnapshot` check structure and return `Result` with `Diagnostic[]` (never throw). `validateProject` / `validateSnapshot` check references and return `Diagnostic[]` with `MODEL_*` codes and a `path`.
+- **FieldMapping shape:** `mappingType` selects the primary operation (direct, constant, lookup, conditional, routine, javascript), each carrying its own definition. An ordered `transformations` chain (routine or lookup steps) follows. Chain order is stored in `order` and serialized sorted.
+- **Definitions live in the project:** `routines` and `lookups` are stored; `MappingDefinition.routineReferences` pins `{routineId, version}` and `lookupReferences` lists lookups used. Usage must be declared.
+- **Rows:** `TargetStructure.generation` names the driver dataset (final semantics in SPEC-013). `TargetStructure.parent` links a child structure to its parent through key pairs.
+- **Snapshots** are self-contained (mapping, target, source schemas, routines, lookups, `modelSchemaVersion`) and hold no row data. Projects exclude snapshots and runs.
+- **Values:** IDs are branded opaque strings supplied by the caller (core generates none). Timestamps are UTC ISO strings. Decimals are strings. No `Date` objects.
+- **Serialization:** JSON envelope `{ format, schemaVersion: 1, <body> }`, canonical key order from the schema, 2-space indent, trailing newline. Newer schema versions are rejected. Golden file: `packages/mapping-core/test/fixtures/profit-center.project.json`. Do not run Prettier on it.
+- **Boundaries:** core imports only `zod` and relative modules; `tsconfig` has no DOM lib and no Node types for `src`. Enforced by `boundaries.test.ts`.
+- **Deviations from the SPEC-001 minimums (additive):** `Diagnostic.path`, `RunResult.inputRecordCounts` (per dataset), `RunResult.generatedFiles`, `SourceDefinition.fingerprint`, `nativeType` on fields, `Relationship.status` values `suggested|confirmed|rejected`.

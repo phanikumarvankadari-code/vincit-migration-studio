@@ -746,3 +746,18 @@ The implementing developer or coding agent must report:
 8. Assumptions
 9. Open questions
 10. Any recommended follow-up changes to SPEC-002 or later specifications
+
+---
+
+## Completion Report (M1)
+
+1. **Files created:** `packages/mapping-core/{package.json,tsconfig.json,src/*.ts}`, `packages/mapping-core/test/*.test.ts` and `fixtures/`, `tests/milestones/m1-canonical-model/`, `tsconfig.base.json`.
+2. **Files modified:** `package.json`, `tsconfig.json`, `eslint.config.js`, `.prettierignore`, `docs/ARCHITECTURE.md` (section 14), `CLAUDE.md`.
+3. **Domain-model choices:** see `docs/ARCHITECTURE.md` section 14.
+4. **Runtime validation:** Zod 4 structural parse plus a pure semantic `validateProject` / `validateSnapshot`.
+5. **Tests created:** 99 across source/target, mapping, serialization (with golden JSON), validation, snapshot/run/diagnostic, boundaries, and the M1 milestone demo check.
+6. **Tests executed:** `npm test`, `npm run typecheck`, `npm run lint`, `npm run coverage`, `prettier --check`.
+7. **Results:** all pass; 94.6% line coverage.
+8. **Assumptions:** the 13 design points in the design review were adopted as recommended (user said "continue with milestones").
+9. **Open questions:** condition language is minimal (SPEC-012 may extend); `generation` semantics finalised in SPEC-013; Ready/Approved marker for snapshots belongs to SPEC-027 (not stored inside the immutable snapshot).
+10. **Follow-ups:** SPEC-007 target parser needs a user-supplied layout config. SPEC-020/025 implement the four key checks (unmapped key warning, duplicate key, parent-child link, driver suggestion). `fingerprint` on sources is filled by importers.

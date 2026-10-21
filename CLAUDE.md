@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-Milestone M0 done: TypeScript tooling (npm workspaces, Vitest, ESLint, Prettier), docs cleaned, `AGENTS.md` added. `packages/` and `apps/` are still empty. `packages/mapping-core` arrives with M1 (SPEC-001). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`.
+M0 (tooling, docs) and M1 (SPEC-001 canonical model, `packages/mapping-core`) are done. Next: M2 sources (SPEC-002 to 005). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
 
 ## Commands
 
@@ -12,7 +12,7 @@ Milestone M0 done: TypeScript tooling (npm workspaces, Vitest, ESLint, Prettier)
 npm test                 # vitest run (tests/** and packages/*/test/**)
 npx vitest run tests/milestones/m0-setup/m0-setup.test.ts   # single file
 npx vitest run -t "M0-02"                                   # single test by name
-npm run typecheck        # tsc --noEmit (strict)
+npm run typecheck        # tsc for tests and for packages/mapping-core src (no DOM/Node types)
 npm run lint             # eslint
 npm run coverage         # v8 coverage
 ```
