@@ -1,0 +1,18 @@
+{
+  "name": "@mms/local-run",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mms/file-export": "^0.0.0",
+    "@mms/mapping-core": "^0.0.0",
+    "@mms/test-engine": "^0.0.0",
+    "@mms/transformation-engine": "^0.0.0"
+  }
+}

@@ -682,9 +682,7 @@ describe('one-to-many generation (SPEC-013)', () => {
       sourceRow: 5,
     });
     expect(r.diagnostics[0]!.targetRow).toBeUndefined();
-    expect(r.diagnostics[0]!.message).toContain(
-      '"P999"'.slice(0, 0) + 'no matching row in "ds-CEPC"',
-    );
+    expect(r.diagnostics[0]!.message).toContain('no matching row in "ds-CEPC"');
   });
 
   it('left join from the left side keeps the row with blank values', () => {

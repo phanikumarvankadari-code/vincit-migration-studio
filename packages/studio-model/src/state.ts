@@ -14,6 +14,13 @@ import { applyFieldDictionary, type FieldDictionary, type ImportedSource } from 
 import { suggestRelationships, type DatasetData } from '@mms/relationships';
 import type { TestRunResult } from '@mms/test-engine';
 import { pruneDangling, removeMapping, upsertLookup, upsertMapping } from './edit.js';
+import type { Workspace } from './persistence.js';
+import {
+  markSnapshot,
+  restoreSnapshot,
+  type SnapshotMarker,
+  type SnapshotRecord,
+} from './snapshots.js';
 
 /**
  * Everything the app knows. Row data stays here (in memory) and is never part of the project.
@@ -30,6 +37,8 @@ export interface StudioState {
   suggestionNotes: Readonly<
     Record<string, { score: number; evidence: string[]; diagnostics: Diagnostic[] }>
   >;
+  /** Saved snapshots, oldest first. Immutable; only their marker changes. */
+  snapshots: readonly SnapshotRecord[];
   lastRun: TestRunResult | undefined;
   /** The project changed since lastRun, so its results may be out of date. */
   runStale: boolean;
@@ -73,6 +82,12 @@ export type StudioAction =
     }
   | { type: 'mappingRemoved'; structureId: string; fieldId: string; at: string }
   | { type: 'lookupSaved'; lookup: LookupDefinition; at: string }
+  | { type: 'snapshotSaved'; record: SnapshotRecord }
+  | { type: 'snapshotMarked'; snapshotId: string; marker: SnapshotMarker; at: string }
+  | { type: 'snapshotRestored'; snapshotId: string; at: string }
+  | { type: 'workspaceLoaded'; workspace: Workspace }
+  | { type: 'rowsAttached'; imported: ImportedSource; at: string }
+  | { type: 'projectReset'; id: string; name: string; businessEntity: string; at: string }
   | { type: 'projectEdited'; project: Project }
   | { type: 'runFinished'; run: TestRunResult };
 
@@ -107,6 +122,7 @@ export function createStudioState(args: {
     dictionary: undefined,
     importDiagnostics: {},
     suggestionNotes: {},
+    snapshots: [],
     lastRun: undefined,
     runStale: false,
   };
@@ -340,6 +356,96 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
     case 'lookupSaved':
       return withProject(state, upsertLookup(state.project, action.lookup, action.at));
 
+    case 'snapshotSaved':
+      if (state.snapshots.some((r) => r.snapshot.id === action.record.snapshot.id)) return state;
+      return { ...state, snapshots: [...state.snapshots, action.record] };
+
+    case 'snapshotMarked': {
+      if (!state.snapshots.some((r) => r.snapshot.id === action.snapshotId)) return state;
+      return {
+        ...state,
+        snapshots: state.snapshots.map((r) =>
+          r.snapshot.id === action.snapshotId ? markSnapshot(r, action.marker, action.at) : r,
+        ),
+      };
+    }
+
+    case 'snapshotRestored': {
+      const record = state.snapshots.find((r) => r.snapshot.id === action.snapshotId);
+      if (!record) return state;
+      const project = pruneDangling(restoreSnapshot(state.project, record.snapshot, action.at));
+      const ids = new Set(
+        project.sourceDefinitions.flatMap((x) => x.datasets.map((d) => d.id as string)),
+      );
+      const data = Object.fromEntries(Object.entries(state.data).filter(([id]) => ids.has(id)));
+      return withProject(state, project, { data });
+    }
+
+    case 'workspaceLoaded':
+      return {
+        ...createStudioState({
+          id: action.workspace.project.id,
+          name: action.workspace.project.name,
+          businessEntity: action.workspace.project.businessEntity,
+          at: action.workspace.project.createdAt,
+        }),
+        project: action.workspace.project,
+        snapshots: action.workspace.snapshots,
+        dictionary: action.workspace.dictionary,
+      };
+
+    case 'rowsAttached': {
+      const diagnostics: Diagnostic[] = [];
+      const data: Record<string, SourceRows> = { ...state.data };
+      const datasets = new Map(
+        state.project.sourceDefinitions
+          .flatMap((x) => x.datasets)
+          .map((d) => [d.id as string, d] as const),
+      );
+      for (const r of action.imported.rows) {
+        const ds = datasets.get(r.datasetId);
+        const incoming = action.imported.source.datasets.find((d) => d.id === r.datasetId);
+        if (!ds || !incoming) {
+          diagnostics.push({
+            severity: 'warning',
+            code: 'ATTACH_UNKNOWN_DATASET',
+            message: `The file's data "${incoming?.name ?? r.datasetId}" does not match any dataset of this project, so it was not used.`,
+          });
+          continue;
+        }
+        const expected = ds.fields.map((f) => f.displayName);
+        const found = incoming.fields.map((f) => f.displayName);
+        if (expected.length !== found.length || expected.some((n, i) => n !== found[i])) {
+          diagnostics.push({
+            severity: 'error',
+            code: 'ATTACH_FIELD_MISMATCH',
+            message: `"${ds.name}" does not fit: the project expects the columns ${expected.join(', ')} but the file has ${found.join(', ')}.`,
+          });
+          continue;
+        }
+        data[ds.id] = { datasetId: ds.id, fieldIds: ds.fields.map((f) => f.id), rows: r.rows };
+      }
+      return {
+        ...state,
+        data,
+        importDiagnostics: {
+          ...state.importDiagnostics,
+          [action.imported.source.id]: [...action.imported.diagnostics, ...diagnostics],
+        },
+        runStale: state.lastRun !== undefined,
+      };
+    }
+
+    case 'projectReset':
+      return {
+        ...createStudioState({
+          id: action.id,
+          name: action.name,
+          businessEntity: action.businessEntity,
+          at: action.at,
+        }),
+      };
+
     case 'projectEdited':
       // The result of a pure edit (for example from the Visual Mapper). It must already be a consistent project.
       return withProject(state, action.project);
@@ -347,4 +453,15 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
     case 'runFinished':
       return { ...state, lastRun: action.run, runStale: false };
   }
+}
+
+/** Datasets of the project whose rows are not loaded (for example after reopening a saved project). */
+export function datasetsWithoutData(
+  state: Pick<StudioState, 'project' | 'data'>,
+): { datasetId: string; name: string; sourceName: string }[] {
+  return state.project.sourceDefinitions.flatMap((s) =>
+    s.datasets
+      .filter((d) => !state.data[d.id])
+      .map((d) => ({ datasetId: d.id as string, name: d.name, sourceName: s.name })),
+  );
 }

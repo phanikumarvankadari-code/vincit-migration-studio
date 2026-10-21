@@ -134,7 +134,7 @@ test.describe('Test stage: results, lineage and diagnostics (SPEC-024, 025, 026)
   }) => {
     await runTest(page);
     const list = page.getByTestId('diagnostics-list');
-    await expect(list).toContainText('2 errors'.slice(0, 0) + 'Problems');
+    await expect(list).toContainText('Problems');
     const group = page.getByTestId('diagnostic-group-DATE_INVALID');
     await expect(group).toContainText('Cannot read "13/45/26"');
     await expect(group).toContainText('Profit Center › Valid From · first at row 3');
@@ -254,7 +254,7 @@ test.describe('Before running and Ready checklist', () => {
       'Required field "Valid From" of "Profit Center" has no mapping.',
     );
     await goToStage(page, 'ready');
-    await expect(page.getByTestId('ready-summary')).toHaveText('3 of 8 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('3 of 10 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toContainText('Waiting for');
     await page
       .getByRole('listitem')
@@ -299,7 +299,7 @@ test.describe('Before running and Ready checklist', () => {
     await runTest(page);
     await expect(page.getByTestId('run-summary')).toContainText('The test ran without errors.');
     await goToStage(page, 'ready');
-    await expect(page.getByTestId('ready-summary')).toHaveText('8 of 8 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('8 of 10 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toHaveText('Ready to save a snapshot');
     await expect(page.getByTestId('stage-test-summary')).toContainText('Last run clean');
   });

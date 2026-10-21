@@ -1,7 +1,22 @@
-import { Badge, Button, Input, Text, makeStyles, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Input,
+  MessageBar,
+  MessageBarBody,
+  Text,
+  makeStyles,
+  tokens,
+} from '@fluentui/react-components';
 import { STAGES, STAGE_LABELS } from '@mms/studio-model';
 import { useState } from 'react';
-import { StageBadge } from '../components/common';
+import { FileButton, StageBadge } from '../components/common';
 import { useStudio } from '../context';
 import { MapStage } from '../stages/MapStage';
 import { ReadyStage } from '../stages/ReadyStage';
@@ -12,7 +27,7 @@ import { TestStage } from '../stages/TestStage';
 const useStyles = makeStyles({
   app: {
     display: 'grid',
-    gridTemplateRows: 'auto 1fr',
+    gridTemplateRows: 'auto auto 1fr',
     height: '100vh',
     backgroundColor: tokens.colorNeutralBackground2,
   },
@@ -29,6 +44,13 @@ const useStyles = makeStyles({
     display: 'flex',
     gap: tokens.spacingHorizontalS,
     marginLeft: 'auto',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  headerActions: {
+    display: 'flex',
+    gap: tokens.spacingHorizontalS,
+    alignItems: 'center',
     flexWrap: 'wrap',
   },
   body: { display: 'grid', gridTemplateColumns: '260px 1fr', minHeight: 0 },
@@ -75,12 +97,32 @@ const ORDER_HELP: Record<string, string> = {
 
 export function Shell() {
   const s = useStyles();
-  const { state, send, statuses, stage, setStage } = useStudio();
+  const {
+    state,
+    send,
+    statuses,
+    stage,
+    setStage,
+    saveStatus,
+    startup,
+    dismissStartup,
+    newProject,
+    saveProjectFile,
+    openProjectFile,
+  } = useStudio();
+  const [confirmNew, setConfirmNew] = useState(false);
+  const [openError, setOpenError] = useState<string | undefined>();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [entity, setEntity] = useState('');
   const datasets = state.project.sourceDefinitions.flatMap((d) => d.datasets).length;
   const structures = state.project.targetDefinition?.structures.length ?? 0;
+  const hasWork =
+    datasets > 0 ||
+    structures > 0 ||
+    state.snapshots.length > 0 ||
+    state.project.mappingDefinition.mappings.length > 0;
+  const savedTime = saveStatus.at ? new Date(saveStatus.at).toLocaleTimeString() : undefined;
 
   return (
     <div className={s.app}>
@@ -129,7 +171,40 @@ export function Shell() {
             Rename
           </Button>
         )}
+        <div className={s.headerActions} aria-label="Project file actions">
+          <Button
+            size="small"
+            appearance="outline"
+            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+            onClick={() => (hasWork ? setConfirmNew(true) : newProject())}
+          >
+            New project
+          </Button>
+          <Button
+            size="small"
+            appearance="outline"
+            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+            onClick={saveProjectFile}
+          >
+            Save project file
+          </Button>
+          <FileButton
+            label="Open project file"
+            accept=".json,.mms.json"
+            testId="project-file-input"
+            onFiles={(f) => {
+              void openProjectFile(f[0]!).then(setOpenError);
+            }}
+          />
+        </div>
         <div className={s.headerFacts} aria-label="Project context">
+          <Text size={200} data-testid="autosave-status" style={{ color: 'inherit' }}>
+            {saveStatus.state === 'saved'
+              ? `Autosaved ${savedTime}`
+              : saveStatus.state === 'error'
+                ? `Not saved: ${saveStatus.message}`
+                : 'Autosave on'}
+          </Text>
           <Badge appearance="filled" color="informative" data-testid="project-entity">
             {state.project.businessEntity}
           </Badge>
@@ -141,6 +216,47 @@ export function Shell() {
           </Badge>
         </div>
       </header>
+      <div>
+        {startup.kind === 'ok' && (
+          <MessageBar intent="info" data-testid="restored-banner">
+            <MessageBarBody>
+              Project “{startup.workspace.project.name}” was restored. Source rows are not saved, so
+              add the source files again (Sources) before you test or run.
+            </MessageBarBody>
+            <Button
+              size="small"
+              onClick={() => {
+                setStage('sources');
+                dismissStartup();
+              }}
+            >
+              Go to Sources
+            </Button>
+            <Button size="small" appearance="transparent" onClick={dismissStartup}>
+              Dismiss
+            </Button>
+          </MessageBar>
+        )}
+        {startup.kind === 'unreadable' && (
+          <MessageBar intent="warning" data-testid="unreadable-banner">
+            <MessageBarBody>
+              The project saved in this browser could not be read and was not loaded:{' '}
+              {startup.reason}
+            </MessageBarBody>
+            <Button size="small" appearance="transparent" onClick={dismissStartup}>
+              Dismiss
+            </Button>
+          </MessageBar>
+        )}
+        {openError && (
+          <MessageBar intent="error" data-testid="open-error">
+            <MessageBarBody>The project file was not opened: {openError}</MessageBarBody>
+            <Button size="small" appearance="transparent" onClick={() => setOpenError(undefined)}>
+              Dismiss
+            </Button>
+          </MessageBar>
+        )}
+      </div>
       <div className={s.body}>
         <nav className={s.nav} aria-label="Stages">
           {STAGES.map((id, i) => (
@@ -183,6 +299,29 @@ export function Shell() {
           {stage === 'ready' && <ReadyStage />}
         </main>
       </div>
+      <Dialog open={confirmNew} onOpenChange={(_, d) => setConfirmNew(d.open)}>
+        <DialogSurface aria-label="Start a new project">
+          <DialogBody>
+            <DialogTitle>Start a new project?</DialogTitle>
+            <DialogContent>
+              The current project, including its snapshots, is replaced. Save a project file first
+              if you want to keep it.
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="primary"
+                onClick={() => {
+                  setConfirmNew(false);
+                  newProject();
+                }}
+              >
+                Start new project
+              </Button>
+              <Button onClick={() => setConfirmNew(false)}>Cancel</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

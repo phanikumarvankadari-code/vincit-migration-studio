@@ -181,3 +181,11 @@ export function bigCepc(rows: number) {
   for (let i = 1; i <= rows; i++) lines.push(`P${String(i).padStart(5, '0')},12/31/99,1/1/26,FI`);
   return csv('CEPC.csv', lines.join('\n'));
 }
+
+export async function confirmJoin(page: Page): Promise<void> {
+  await goToStage(page, 'sources');
+  await page
+    .getByTestId('relationship-rel-CEPC-CEPC_BUKRS')
+    .getByRole('button', { name: 'Confirm join' })
+    .click();
+}

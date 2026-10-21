@@ -39,7 +39,7 @@ test.describe('application shell (SPEC-021)', () => {
     await page.getByRole('button', { name: 'Rename' }).click();
     await page.getByLabel('Project name').fill('Profit Center SIT');
     await page.getByLabel('Business entity').fill('Profit Center');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await goToStage(page, 'map');
     await expect(page.getByTestId('project-name')).toHaveText('Profit Center SIT');
     await expect(page.getByTestId('project-entity')).toHaveText('Profit Center');

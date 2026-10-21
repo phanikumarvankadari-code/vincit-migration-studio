@@ -1,0 +1,4 @@
+Client,Language Key,Profit Center,Valid To,Controlling Area,Name,Long Text,Profit center short text for matchcode
+100,EN,S_PC_1,12/31/99,1000,Finance 1,Finance profit center 1,FIN 1
+100,EN,S_PC_2,12/31/99,1000,Finance 2,Finance profit center 2,FIN 2
+100,EN,S_PC_3,12/31/99,1000,Finance 3,Finance profit center 3,FIN 3

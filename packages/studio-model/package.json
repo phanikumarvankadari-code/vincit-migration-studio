@@ -16,6 +16,7 @@
     "@mms/routine-library": "^0.0.0",
     "@mms/target-parser": "^0.0.0",
     "@mms/test-engine": "^0.0.0",
-    "@mms/transformation-engine": "^0.0.0"
+    "@mms/transformation-engine": "^0.0.0",
+    "zod": "4.6.7"
   }
 }

@@ -1,9 +1,12 @@
 import type { Diagnostic } from '@mms/mapping-core';
+import type { LocalRunResult } from '@mms/local-run';
 import { profileDataset, type DatasetProfile } from '@mms/profiler';
 import { createBuiltInRegistry } from '@mms/routine-library';
 import {
   buildMappingRows,
   createStudioState,
+  decodeWorkspace,
+  encodeWorkspace,
   reduce,
   stageStatuses,
   type MappingRow,
@@ -18,11 +21,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { MIME, clearStored, downloadFile, loadStored, store, type Stored } from './lib/storage';
 
 type WithoutAt<A> = A extends { at: string } ? Omit<A, 'at'> : A;
 export type StudioEvent = WithoutAt<StudioAction>;
@@ -39,13 +45,24 @@ export interface StudioApi {
   stage: Stage;
   setStage: (s: Stage) => void;
   runSample: (sample: SampleConfig) => void;
+  /** Output of the last full run. */
+  lastOutput: LocalRunResult | undefined;
+  setLastOutput: (r: LocalRunResult | undefined) => void;
+  /** Autosave: when the draft was last saved in this browser, or why it could not be. */
+  saveStatus: { state: 'idle' | 'saved' | 'error'; at?: string; message?: string };
+  /** What happened to the project saved in this browser when the app started. */
+  startup: Stored;
+  dismissStartup: () => void;
+  newProject: () => void;
+  saveProjectFile: () => void;
+  openProjectFile: (file: File) => Promise<string | undefined>;
 }
 
 const Ctx = createContext<StudioApi | undefined>(undefined);
 
 export const nowIso = (): string => new Date().toISOString();
 
-function initialState(): StudioState {
+function freshState(): StudioState {
   return createStudioState({
     id: crypto.randomUUID(),
     name: 'New migration project',
@@ -54,9 +71,25 @@ function initialState(): StudioState {
   });
 }
 
+/** The project saved in this browser (without row data), or a new one. */
+function initialState(): { state: StudioState; startup: Stored } {
+  const stored = loadStored();
+  if (stored.kind === 'ok') {
+    return {
+      state: reduce(freshState(), { type: 'workspaceLoaded', workspace: stored.workspace }),
+      startup: stored,
+    };
+  }
+  return { state: freshState(), startup: stored };
+}
+
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reduce, undefined, initialState);
+  const [boot] = useState(initialState);
+  const [state, dispatch] = useReducer(reduce, boot.state);
   const [stage, setStage] = useState<Stage>('sources');
+  const [startup, setStartup] = useState<Stored>(boot.startup);
+  const [lastOutput, setLastOutput] = useState<LocalRunResult | undefined>();
+  const [saveStatus, setSaveStatus] = useState<StudioApi['saveStatus']>({ state: 'idle' });
   const registry = useMemo(
     () => createBuiltInRegistry({ randomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)) }),
     [],
@@ -115,6 +148,68 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [state.project, state.data, registry],
   );
 
+  // Autosave: the draft, its snapshots and the dictionary (never the row data) are kept in this browser.
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      if (startup.kind === 'ok') return; // just loaded: nothing new to save
+    }
+    const timer = window.setTimeout(() => {
+      const at = nowIso();
+      const result = store(
+        encodeWorkspace({
+          project: state.project,
+          snapshots: [...state.snapshots],
+          dictionary: state.dictionary,
+          savedAt: at,
+        }),
+      );
+      setSaveStatus(
+        result.ok ? { state: 'saved', at } : { state: 'error', message: result.message },
+      );
+    }, 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.project, state.snapshots, state.dictionary]);
+
+  const newProject = useCallback(() => {
+    clearStored();
+    dispatch({
+      type: 'projectReset',
+      id: crypto.randomUUID(),
+      name: 'New migration project',
+      businessEntity: 'Business object',
+      at: nowIso(),
+    });
+    setLastOutput(undefined);
+    setStartup({ kind: 'none' });
+    setStage('sources');
+  }, []);
+
+  const saveProjectFile = useCallback(() => {
+    const text = encodeWorkspace({
+      project: state.project,
+      snapshots: [...state.snapshots],
+      dictionary: state.dictionary,
+      savedAt: nowIso(),
+    });
+    downloadFile(
+      `${state.project.name.replace(/[\\/:*?"<>|]+/g, '_') || 'project'}.mms.json`,
+      text,
+      MIME['json']!,
+    );
+  }, [state.project, state.snapshots, state.dictionary]);
+
+  const openProjectFile = useCallback(async (file: File): Promise<string | undefined> => {
+    const r = decodeWorkspace(await file.text());
+    if (!r.ok) return r.issues.map((i) => i.message).join(' ');
+    dispatch({ type: 'workspaceLoaded', workspace: r.value });
+    setLastOutput(undefined);
+    setStartup({ kind: 'ok', workspace: r.value });
+    return undefined;
+  }, []);
+
   const api = useMemo<StudioApi>(
     () => ({
       state,
@@ -127,8 +222,32 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       stage,
       setStage,
       runSample,
+      lastOutput,
+      setLastOutput,
+      saveStatus,
+      startup,
+      dismissStartup: () => setStartup({ kind: 'none' }),
+      newProject,
+      saveProjectFile,
+      openProjectFile,
     }),
-    [state, send, registry, preflightList, rows, statuses, profiles, stage, runSample],
+    [
+      state,
+      send,
+      registry,
+      preflightList,
+      rows,
+      statuses,
+      profiles,
+      stage,
+      runSample,
+      lastOutput,
+      saveStatus,
+      startup,
+      newProject,
+      saveProjectFile,
+      openProjectFile,
+    ],
   );
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

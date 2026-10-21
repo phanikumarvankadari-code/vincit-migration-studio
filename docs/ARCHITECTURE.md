@@ -411,3 +411,12 @@ Implemented in `@mms/test-engine` (depends on `mapping-core`, `routine-library` 
 - **Results.** The grid is virtualized (only visible rows are in the DOM, so 100,000-row results stay responsive), filters by Ready, Warning and Error, tints cells that have their own problem, and has one tab per target structure. Selecting a cell shows its lineage from the final value down to the source cells (SPEC-026); selecting a row number inspects the row. The problems list collapses repeats, shows plain messages first with technical details on request, and links to rows in the grid. Lineage is recorded for samples up to 1,000 rows.
 - **Stage status is derived, never stored** (`stageStatuses`): Sources (files, joins to confirm), Target, Map (fields mapped, pre-flight problems), Test (last run, out of date), Ready (all of these plus a clean test). The Ready stage lists the checklist; saving snapshots and writing output arrive in the next milestone.
 - **Toolchain:** Vite 8, React 19, Fluent UI 9, React Flow 12, TanStack Virtual. The app typechecks with its own tsconfig (DOM, bundler module resolution). The JavaScript sandbox is not bundled into the app yet.
+
+## 21. Snapshots, Persistence and Local Output (SPEC-027 to 029)
+
+- A snapshot is an immutable, deep-frozen copy of the mapping definition and target structures. The marker (none, ready, approved) lives outside the snapshot, so marking never changes it. Restoring copies a snapshot into the draft.
+- Ready stage completes only when a marked snapshot matches the checklist.
+- Autosave writes the workspace (project, snapshots, dictionary) to localStorage `mms:workspace`; never row data. Rows are re-attached by loading the files again. `decodeWorkspace` validates with the schemas and refuses inconsistent files.
+- Layout positions of the Visual Mapper stay UI-only.
+- Local run (`@mms/local-run`) runs a snapshot over full data. Writes `<Structure>.csv`, `<Structure>.errors.csv` (only when errors), `diagnostics.csv`, `run-summary.json`, optional XLSX. It refuses non-full runs and blocking pre-flight errors. Nothing is dropped silently.
+- Golden scenario (SPEC-029) uses a key-aligned companion data set, because the supplied files share no key values.
