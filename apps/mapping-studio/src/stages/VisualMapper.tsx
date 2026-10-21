@@ -144,7 +144,7 @@ export function VisualMapper({
   const structures = state.project.targetDefinition?.structures ?? [];
   const [mode, setMode] = useState<'mapping' | 'relationships'>('mapping');
   const [structureId, setStructureId] = useState<string>(structures[0]?.id ?? '');
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
   const [message, setMessage] = useState<{ intent: 'error' | 'info'; text: string } | undefined>();
   const [selectedTarget, setSelectedTarget] = useState<string | undefined>();
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<string>>(new Set());

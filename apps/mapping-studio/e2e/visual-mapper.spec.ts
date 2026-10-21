@@ -44,6 +44,16 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     await expect(page.locator('.react-flow__edge')).toHaveCount(3);
   });
 
+  test('all source fields are on the canvas from the start, so a link can be drawn at once', async ({
+    page,
+  }) => {
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    await expect(page.getByLabel('Show all source fields')).toBeChecked();
+    for (const n of [1, 2, 3, 4]) await expect(node(page, srcId(n))).toBeVisible();
+    await expect(page.locator('.react-flow__edge')).toHaveCount(0);
+  });
+
   test('connecting a source field to an unmapped target field creates a mapping the table also shows', async ({
     page,
   }) => {
@@ -147,10 +157,14 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     const moved = (await target.boundingBox())!;
     // the canvas may pan a little while dragging near its edge, so only require a clear move
     expect(Math.abs(moved.y - before.y)).toBeGreaterThan(20);
+    // the view is fitted (and zoomed) again when the picture is reopened, so compare with a node that was not moved
+    const anchor = (await node(page, tgtId(1)).boundingBox())!;
+    const offset = (moved.y - anchor.y) / anchor.height; // in node heights, so zoom does not matter
     await page.getByRole('tab', { name: 'Mapping Table' }).click();
     await openVisual(page);
     const again = (await node(page, tgtId(4)).boundingBox())!;
-    expect(Math.abs(again.y - moved.y)).toBeLessThan(30);
+    const anchorAgain = (await node(page, tgtId(1)).boundingBox())!;
+    expect(Math.abs((again.y - anchorAgain.y) / anchorAgain.height - offset)).toBeLessThan(0.3);
   });
 
   test('the joins picture shows datasets and joins; a join can be confirmed from it', async ({

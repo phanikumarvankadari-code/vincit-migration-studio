@@ -420,3 +420,4 @@ Implemented in `@mms/test-engine` (depends on `mapping-core`, `routine-library` 
 - Layout positions of the Visual Mapper stay UI-only.
 - Local run (`@mms/local-run`) runs a snapshot over full data. Writes `<Structure>.csv`, `<Structure>.errors.csv` (only when errors), `diagnostics.csv`, `run-summary.json`, optional XLSX. It refuses non-full runs and blocking pre-flight errors. Nothing is dropped silently.
 - Golden scenario (SPEC-029) uses a key-aligned companion data set, because the supplied files share no key values.
+- Project library: autosave also keeps each project that has work in `mms:project:<id>` with an index in `mms:projects` (no row data). The Projects dialog opens or deletes them; `mms:workspace` stays the project open last. The Visual Mapper shows all source fields by default.

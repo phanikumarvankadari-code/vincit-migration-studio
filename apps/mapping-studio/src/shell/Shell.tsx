@@ -18,6 +18,7 @@ import { STAGES, STAGE_LABELS } from '@mms/studio-model';
 import { useState } from 'react';
 import { FileButton, StageBadge } from '../components/common';
 import { useStudio } from '../context';
+import { deleteFromLibrary, listProjects } from '../lib/storage';
 import { MapStage } from '../stages/MapStage';
 import { ReadyStage } from '../stages/ReadyStage';
 import { SourcesStage } from '../stages/SourcesStage';
@@ -107,9 +108,13 @@ export function Shell() {
     startup,
     dismissStartup,
     newProject,
+    openLibraryProject,
     saveProjectFile,
     openProjectFile,
   } = useStudio();
+  const [showProjects, setShowProjects] = useState(false);
+  const [, setRemoved] = useState(0); // bumped to re-read the library after a delete
+  const library = showProjects ? listProjects() : [];
   const [confirmNew, setConfirmNew] = useState(false);
   const [openError, setOpenError] = useState<string | undefined>();
   const [editing, setEditing] = useState(false);
@@ -179,6 +184,14 @@ export function Shell() {
             onClick={() => (hasWork ? setConfirmNew(true) : newProject())}
           >
             New project
+          </Button>
+          <Button
+            size="small"
+            appearance="outline"
+            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+            onClick={() => setShowProjects(true)}
+          >
+            Projects
           </Button>
           <Button
             size="small"
@@ -299,13 +312,76 @@ export function Shell() {
           {stage === 'ready' && <ReadyStage />}
         </main>
       </div>
+      <Dialog open={showProjects} onOpenChange={(_, d) => setShowProjects(d.open)}>
+        <DialogSurface aria-label="Projects in this browser">
+          <DialogBody>
+            <DialogTitle>Projects in this browser</DialogTitle>
+            <DialogContent>
+              {library.length === 0 ? (
+                <Text data-testid="projects-empty">
+                  No saved projects yet. A project appears here once it has sources, a target or
+                  mappings.
+                </Text>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {library.map((e) => (
+                    <li
+                      key={e.id}
+                      data-testid={`project-${e.name}`}
+                      style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0' }}
+                    >
+                      <span style={{ flex: 1 }}>
+                        <Text weight="semibold">{e.name}</Text>{' '}
+                        <Text size={200}>
+                          {e.businessEntity} · saved {new Date(e.savedAt).toLocaleString()}
+                          {e.id === state.project.id ? ' · open now' : ''}
+                        </Text>
+                      </span>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        disabled={e.id === state.project.id}
+                        onClick={() => {
+                          const err = openLibraryProject(e.id);
+                          if (err) setOpenError(err);
+                          else setShowProjects(false);
+                        }}
+                      >
+                        Open
+                      </Button>
+                      <Button
+                        size="small"
+                        disabled={e.id === state.project.id}
+                        aria-label={`Delete ${e.name}`}
+                        onClick={() => {
+                          deleteFromLibrary(e.id);
+                          setRemoved((n) => n + 1);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Text size={200} block style={{ marginTop: 8 }}>
+                Source rows are not kept. After opening a project, add its source files again before
+                you test or run.
+              </Text>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setShowProjects(false)}>Close</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
       <Dialog open={confirmNew} onOpenChange={(_, d) => setConfirmNew(d.open)}>
         <DialogSurface aria-label="Start a new project">
           <DialogBody>
             <DialogTitle>Start a new project?</DialogTitle>
             <DialogContent>
-              The current project, including its snapshots, is replaced. Save a project file first
-              if you want to keep it.
+              The current project stays in Projects and can be opened again from there. Save a
+              project file first if you want a copy you can move to another computer.
             </DialogContent>
             <DialogActions>
               <Button
