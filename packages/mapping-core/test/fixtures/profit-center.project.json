@@ -1,0 +1,526 @@
+{
+  "format": "mms.project",
+  "schemaVersion": 1,
+  "project": {
+    "id": "p1",
+    "name": "Profit Center migration",
+    "businessEntity": "ProfitCenter",
+    "sourceDefinitions": [
+      {
+        "id": "src-cepc",
+        "name": "CEPC",
+        "sourceType": "csv",
+        "location": {
+          "kind": "localFile",
+          "path": "test-data/profit-center/input/CEPC.csv"
+        },
+        "datasets": [
+          {
+            "id": "ds-cepc",
+            "sourceId": "src-cepc",
+            "name": "CEPC",
+            "displayName": "CEPC",
+            "fields": [
+              {
+                "id": "f-cepc-prctr",
+                "datasetId": "ds-cepc",
+                "displayName": "Profit Center",
+                "technicalName": "PRCTR",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-cepc-kokrs",
+                "datasetId": "ds-cepc",
+                "displayName": "Controlling Area",
+                "technicalName": "KOKRS",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-cepc-datab",
+                "datasetId": "ds-cepc",
+                "displayName": "Valid From",
+                "technicalName": "DATAB",
+                "datatype": "string",
+                "isKey": false
+              },
+              {
+                "id": "f-cepc-land1",
+                "datasetId": "ds-cepc",
+                "displayName": "Country Key",
+                "technicalName": "LAND1",
+                "datatype": "string",
+                "isKey": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "src-cepct",
+        "name": "CEPCT",
+        "sourceType": "csv",
+        "location": {
+          "kind": "localFile",
+          "path": "test-data/profit-center/input/CEPCT.csv"
+        },
+        "datasets": [
+          {
+            "id": "ds-cepct",
+            "sourceId": "src-cepct",
+            "name": "CEPCT",
+            "displayName": "CEPCT",
+            "fields": [
+              {
+                "id": "f-cepct-prctr",
+                "datasetId": "ds-cepct",
+                "displayName": "Profit Center",
+                "technicalName": "PRCTR",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-cepct-kokrs",
+                "datasetId": "ds-cepct",
+                "displayName": "Controlling Area",
+                "technicalName": "KOKRS",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-cepct-ktext",
+                "datasetId": "ds-cepct",
+                "displayName": "Name",
+                "technicalName": "KTEXT",
+                "datatype": "string",
+                "isKey": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "src-bukrs",
+        "name": "CEPC_BUKRS",
+        "sourceType": "csv",
+        "location": {
+          "kind": "localFile",
+          "path": "test-data/profit-center/input/CEPC_BUKRS.csv"
+        },
+        "datasets": [
+          {
+            "id": "ds-bukrs",
+            "sourceId": "src-bukrs",
+            "name": "CEPC_BUKRS",
+            "displayName": "CEPC_BUKRS",
+            "fields": [
+              {
+                "id": "f-bukrs-prctr",
+                "datasetId": "ds-bukrs",
+                "displayName": "Profit Center",
+                "technicalName": "PRCTR",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-bukrs-kokrs",
+                "datasetId": "ds-bukrs",
+                "displayName": "Controlling Area",
+                "technicalName": "KOKRS",
+                "datatype": "string",
+                "isKey": true
+              },
+              {
+                "id": "f-bukrs-bukrs",
+                "datasetId": "ds-bukrs",
+                "displayName": "Company Code",
+                "technicalName": "BUKRS",
+                "datatype": "string",
+                "isKey": true
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "targetDefinition": {
+      "id": "td1",
+      "name": "Profit Center target",
+      "structures": [
+        {
+          "id": "ts-pc",
+          "targetDefinitionId": "td1",
+          "name": "ProfitCenter",
+          "displayName": "Profit Center",
+          "fields": [
+            {
+              "id": "tf-pc-prctr",
+              "targetStructureId": "ts-pc",
+              "displayName": "Profit Center",
+              "datatype": "string",
+              "length": 10,
+              "required": true,
+              "isKey": true
+            },
+            {
+              "id": "tf-pc-validfrom",
+              "targetStructureId": "ts-pc",
+              "displayName": "Valid From",
+              "datatype": "date",
+              "required": true,
+              "isKey": false
+            },
+            {
+              "id": "tf-pc-name",
+              "targetStructureId": "ts-pc",
+              "displayName": "Profit Center Name",
+              "datatype": "string",
+              "length": 20,
+              "required": false,
+              "isKey": false
+            },
+            {
+              "id": "tf-pc-lang",
+              "targetStructureId": "ts-pc",
+              "displayName": "Language",
+              "datatype": "string",
+              "required": false,
+              "isKey": false
+            }
+          ]
+        },
+        {
+          "id": "ts-cc",
+          "targetDefinitionId": "td1",
+          "name": "CompanyCodes",
+          "displayName": "Company Codes",
+          "fields": [
+            {
+              "id": "tf-cc-prctr",
+              "targetStructureId": "ts-cc",
+              "displayName": "Profit Center",
+              "datatype": "string",
+              "required": true,
+              "isKey": true
+            },
+            {
+              "id": "tf-cc-bukrs",
+              "targetStructureId": "ts-cc",
+              "displayName": "Company Code",
+              "datatype": "string",
+              "required": true,
+              "isKey": true
+            }
+          ],
+          "generation": {
+            "driverDatasetId": "ds-bukrs",
+            "viaRelationshipIds": [
+              "rel-cepc-bukrs"
+            ]
+          },
+          "parent": {
+            "parentStructureId": "ts-pc",
+            "keys": [
+              {
+                "childFieldId": "tf-cc-prctr",
+                "parentFieldId": "tf-pc-prctr"
+              }
+            ]
+          }
+        },
+        {
+          "id": "ts-tr",
+          "targetDefinitionId": "td1",
+          "name": "Translation",
+          "displayName": "Translation",
+          "fields": [
+            {
+              "id": "tf-tr-prctr",
+              "targetStructureId": "ts-tr",
+              "displayName": "Profit Center",
+              "datatype": "string",
+              "required": true,
+              "isKey": true
+            },
+            {
+              "id": "tf-tr-name",
+              "targetStructureId": "ts-tr",
+              "displayName": "Profit Center Name",
+              "datatype": "string",
+              "required": false,
+              "isKey": false
+            }
+          ],
+          "generation": {
+            "driverDatasetId": "ds-cepct"
+          }
+        }
+      ]
+    },
+    "mappingDefinition": {
+      "id": "md1",
+      "mappings": [
+        {
+          "id": "m-prctr",
+          "targetStructureId": "ts-pc",
+          "targetFieldId": "tf-pc-prctr",
+          "sourceReferences": [
+            {
+              "datasetId": "ds-cepc",
+              "fieldId": "f-cepc-prctr"
+            }
+          ],
+          "transformations": [],
+          "status": "mapped",
+          "mappingType": "direct"
+        },
+        {
+          "id": "m-lang",
+          "targetStructureId": "ts-pc",
+          "targetFieldId": "tf-pc-lang",
+          "sourceReferences": [],
+          "transformations": [],
+          "status": "mapped",
+          "mappingType": "constant",
+          "constant": {
+            "datatype": "string",
+            "value": "EN"
+          }
+        },
+        {
+          "id": "m-validfrom",
+          "targetStructureId": "ts-pc",
+          "targetFieldId": "tf-pc-validfrom",
+          "sourceReferences": [
+            {
+              "datasetId": "ds-cepc",
+              "fieldId": "f-cepc-datab"
+            }
+          ],
+          "transformations": [
+            {
+              "kind": "routine",
+              "routineId": "r-zero-date",
+              "version": "1",
+              "configuration": {},
+              "order": 0,
+              "onError": "stop"
+            },
+            {
+              "kind": "routine",
+              "routineId": "r-parse-date",
+              "version": "1",
+              "configuration": {},
+              "order": 1,
+              "onError": "stop"
+            },
+            {
+              "kind": "routine",
+              "routineId": "r-format-date",
+              "version": "1",
+              "configuration": {},
+              "order": 2,
+              "onError": "stop"
+            }
+          ],
+          "status": "mapped",
+          "mappingType": "routine"
+        },
+        {
+          "id": "m-company",
+          "targetStructureId": "ts-cc",
+          "targetFieldId": "tf-cc-bukrs",
+          "sourceReferences": [
+            {
+              "datasetId": "ds-bukrs",
+              "fieldId": "f-bukrs-kokrs"
+            }
+          ],
+          "transformations": [],
+          "status": "mapped",
+          "mappingType": "lookup",
+          "lookup": {
+            "lookupId": "lk-company",
+            "configuration": {},
+            "missingValue": {
+              "kind": "error"
+            }
+          }
+        },
+        {
+          "id": "m-name",
+          "targetStructureId": "ts-pc",
+          "targetFieldId": "tf-pc-name",
+          "sourceReferences": [
+            {
+              "datasetId": "ds-cepc",
+              "fieldId": "f-cepc-land1"
+            },
+            {
+              "datasetId": "ds-cepct",
+              "fieldId": "f-cepct-ktext"
+            }
+          ],
+          "transformations": [],
+          "status": "mapped",
+          "mappingType": "conditional",
+          "conditional": {
+            "rules": [
+              {
+                "when": {
+                  "op": "compare",
+                  "operator": "eq",
+                  "left": {
+                    "kind": "field",
+                    "datasetId": "ds-cepc",
+                    "fieldId": "f-cepc-land1"
+                  },
+                  "right": {
+                    "kind": "constant",
+                    "constant": {
+                      "datatype": "string",
+                      "value": "FI"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "field",
+                  "datasetId": "ds-cepct",
+                  "fieldId": "f-cepct-ktext"
+                }
+              }
+            ],
+            "otherwise": {
+              "kind": "constant",
+              "constant": {
+                "datatype": "string",
+                "value": "DEFAULT"
+              }
+            }
+          }
+        },
+        {
+          "id": "m-tr-name",
+          "targetStructureId": "ts-tr",
+          "targetFieldId": "tf-tr-name",
+          "sourceReferences": [
+            {
+              "datasetId": "ds-cepct",
+              "fieldId": "f-cepct-ktext"
+            }
+          ],
+          "transformations": [],
+          "status": "mapped",
+          "mappingType": "javascript",
+          "javascript": {
+            "code": "return value.trim();",
+            "declaredLookupIds": []
+          }
+        }
+      ],
+      "relationships": [
+        {
+          "id": "rel-cepc-cepct",
+          "leftDatasetId": "ds-cepc",
+          "rightDatasetId": "ds-cepct",
+          "keys": [
+            {
+              "leftFieldId": "f-cepc-prctr",
+              "rightFieldId": "f-cepct-prctr"
+            },
+            {
+              "leftFieldId": "f-cepc-kokrs",
+              "rightFieldId": "f-cepct-kokrs"
+            }
+          ],
+          "cardinality": "oneToMany",
+          "joinType": "left",
+          "status": "confirmed"
+        },
+        {
+          "id": "rel-cepc-bukrs",
+          "leftDatasetId": "ds-cepc",
+          "rightDatasetId": "ds-bukrs",
+          "keys": [
+            {
+              "leftFieldId": "f-cepc-prctr",
+              "rightFieldId": "f-bukrs-prctr"
+            }
+          ],
+          "cardinality": "oneToMany",
+          "joinType": "inner",
+          "status": "suggested"
+        }
+      ],
+      "routineReferences": [
+        {
+          "routineId": "r-zero-date",
+          "version": "1"
+        },
+        {
+          "routineId": "r-parse-date",
+          "version": "1"
+        },
+        {
+          "routineId": "r-format-date",
+          "version": "1"
+        }
+      ],
+      "lookupReferences": [
+        {
+          "lookupId": "lk-company"
+        }
+      ],
+      "validationRules": [
+        {
+          "id": "vr-1",
+          "scope": {
+            "kind": "targetField",
+            "targetFieldId": "tf-pc-prctr"
+          },
+          "severity": "error",
+          "ruleType": "required",
+          "configuration": {}
+        }
+      ]
+    },
+    "routines": [
+      {
+        "id": "r-zero-date",
+        "name": "Zero Date to Null",
+        "scope": "builtIn",
+        "version": "1"
+      },
+      {
+        "id": "r-parse-date",
+        "name": "Parse Date",
+        "scope": "builtIn",
+        "version": "1"
+      },
+      {
+        "id": "r-format-date",
+        "name": "Format Date",
+        "scope": "builtIn",
+        "version": "1"
+      }
+    ],
+    "lookups": [
+      {
+        "id": "lk-company",
+        "name": "Controlling Area to Company Code",
+        "keyDatatype": "string",
+        "valueDatatype": "string",
+        "entries": [
+          {
+            "key": "1000",
+            "value": "FI01"
+          }
+        ]
+      }
+    ],
+    "projectState": "draft",
+    "createdAt": "2026-10-21T10:00:00.000Z",
+    "updatedAt": "2026-10-21T10:00:00.000Z"
+  }
+}
