@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/mapping-core/tsconfig.json",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",

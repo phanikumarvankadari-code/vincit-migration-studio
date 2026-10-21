@@ -23,6 +23,13 @@ export const SourceFieldSchema = z.strictObject({
   length: z.number().int().nonnegative().optional(),
   nullable: z.boolean().optional(),
   isKey: z.boolean().optional(),
+  /** Data-dictionary reference info, when a dictionary is applied. */
+  reference: z
+    .strictObject({
+      rollName: z.string().min(1).optional(),
+      checkTable: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 export type SourceField = z.infer<typeof SourceFieldSchema>;
 
