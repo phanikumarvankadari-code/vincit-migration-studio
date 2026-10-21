@@ -10,6 +10,12 @@ export interface StructureSpec {
   name: string;
   fields: string[];
   generation?: { driver: string; via?: string[] };
+  /** Field names that are key fields. */
+  keys?: string[];
+  /** Field names that are required. */
+  required?: string[];
+  /** Link to a parent structure: pairs of [child field, parent field]. */
+  parent?: { structure: string; keys: [string, string][] };
 }
 export interface Spec {
   datasets: DatasetSpec[];
@@ -184,9 +190,20 @@ export function build(spec: Spec): { model: Project; data: SourceRows[] } {
           targetStructureId: `ts-${s.name}`,
           displayName: f,
           datatype: 'string',
-          required: false,
-          isKey: false,
+          required: (s.required ?? []).includes(f),
+          isKey: (s.keys ?? []).includes(f),
         })),
+        ...(s.parent
+          ? {
+              parent: {
+                parentStructureId: `ts-${s.parent.structure}`,
+                keys: s.parent.keys.map(([c, p]) => ({
+                  childFieldId: tf(`${s.name}.${c}`),
+                  parentFieldId: tf(`${s.parent!.structure}.${p}`),
+                })),
+              },
+            }
+          : {}),
         ...(s.generation
           ? {
               generation: {

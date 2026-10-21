@@ -1,0 +1,17 @@
+{
+  "name": "@mms/test-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mms/mapping-core": "^0.0.0",
+    "@mms/routine-library": "^0.0.0",
+    "@mms/transformation-engine": "^0.0.0"
+  }
+}
