@@ -7,5 +7,10 @@
     "module": "ESNext",
     "moduleResolution": "Bundler"
   },
-  "include": ["./*.ts", "../playwright.config.ts"]
+  "include": [
+    "./*.ts",
+    "../e2e-container/*.ts",
+    "../playwright.config.ts",
+    "../playwright.container.config.ts"
+  ]
 }
