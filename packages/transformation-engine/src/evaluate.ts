@@ -223,6 +223,12 @@ export function evaluateMapping(
         value: first,
         inputs,
         row: env.row.record([...new Set(m.sourceReferences.map((s) => s.datasetId))]),
+        lookup: (lookupId, key) => {
+          if (!m.javascript.declaredLookupIds.includes(lookupId as never) || key === null)
+            return undefined;
+          const idx = env.lookups.get(lookupId);
+          return idx?.entries.has(key) ? (idx.entries.get(key) ?? null) : undefined;
+        },
       });
       if (r.ok) value = r.value;
       else note('error', r.code, r.message);
