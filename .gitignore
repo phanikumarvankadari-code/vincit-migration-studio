@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.tmp/
+.playwright-mcp/
+*.tsbuildinfo
+.DS_Store
