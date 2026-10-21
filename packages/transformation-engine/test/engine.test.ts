@@ -904,3 +904,57 @@ describe('execution rules', () => {
     expect(r).toMatchObject({ warningCount: 3, errorCount: 0, inputRecordCounts: { 'ds-P': 3 } });
   });
 });
+
+describe('sampling hooks (used by the test engine)', () => {
+  const rows = Array.from({ length: 10 }, (_, i) => [String(i), `n${i}`, 'FI', '']);
+  const spec: Spec = {
+    datasets: [{ ...people, rows }],
+    targets: [target],
+    mappings: [direct('T.Id', 'P.id')],
+  };
+
+  it('sampleRows chooses the driver rows to run, in ascending order, and the output records which', () => {
+    const r = run(spec, { sampleRows: () => [7, 2, 5] });
+    expect(rowsOf(r, 'T').map((x) => x[0])).toEqual(['2', '5', '7']);
+    expect(r.targets[0]!.driverRows).toEqual([3, 6, 8]);
+  });
+
+  it('invalid and repeated row numbers are ignored', () => {
+    const r = run(spec, { sampleRows: () => [1, 1, -1, 99, 2.5, 3] });
+    expect(rowsOf(r, 'T').map((x) => x[0])).toEqual(['1', '3']);
+  });
+
+  it('sampleRows overrides limit and receives the structure, driver and row count', () => {
+    let seen: unknown;
+    const r = run(spec, { limit: 1, sampleRows: (info) => ((seen = info), [0, 1]) });
+    expect(seen).toEqual({ targetStructureId: 'ts-T', driverDatasetId: 'ds-P', rowCount: 10 });
+    expect(rowsOf(r, 'T')).toHaveLength(2);
+  });
+
+  it('the output reports the driver dataset, its size and how many rows were run', () => {
+    expect(run(spec).targets[0]).toMatchObject({
+      driverDataset: 'ds-P',
+      driverRowCount: 10,
+      sampledRowCount: 10,
+    });
+    expect(run(spec, { limit: 4 }).targets[0]).toMatchObject({
+      driverRowCount: 10,
+      sampledRowCount: 4,
+    });
+    expect(run(spec, { limit: 99 }).targets[0]).toMatchObject({ sampledRowCount: 10 });
+    expect(run(spec, { limit: -3 }).targets[0]).toMatchObject({ sampledRowCount: 0 });
+  });
+
+  it('a structure that could not run reports no driver', () => {
+    const r = run({
+      datasets: [people],
+      targets: [target, { name: 'Other', fields: ['X'] }],
+      mappings: [direct('T.Id', 'P.id')],
+    });
+    expect(r.targets[1]).toMatchObject({
+      driverDataset: '',
+      driverRowCount: 0,
+      sampledRowCount: 0,
+    });
+  });
+});

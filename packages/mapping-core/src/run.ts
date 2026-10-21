@@ -19,6 +19,8 @@ export const RunDefinitionSchema = z.strictObject({
   sample: z
     .discriminatedUnion('kind', [
       z.strictObject({ kind: z.literal('firstRows'), count: z.number().int().positive() }),
+      /** Evenly spaced rows across the dataset, so a sample is not just the top of the file. */
+      z.strictObject({ kind: z.literal('spread'), count: z.number().int().positive() }),
       z.strictObject({ kind: z.literal('all') }),
     ])
     .optional(),

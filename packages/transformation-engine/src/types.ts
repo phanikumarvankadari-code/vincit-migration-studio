@@ -44,6 +44,15 @@ export interface ExecuteOptions {
   collectLineage?: boolean;
   /** Only the first N driver rows of each target structure (test runs). */
   limit?: number;
+  /**
+   * Chooses which driver rows to run, as 0-based row numbers (overrides `limit`). Invalid or repeated
+   * numbers are ignored and the rest run in ascending order.
+   */
+  sampleRows?: (info: {
+    targetStructureId: string;
+    driverDatasetId: string;
+    rowCount: number;
+  }) => readonly number[];
   /** Only these target structures, by ID. Default: all. */
   structures?: readonly string[];
 }
@@ -56,6 +65,11 @@ export interface TargetOutput {
   rowStatus: RowStatus[];
   /** For each output row, the 1-based driver row it came from. */
   driverRows: number[];
+  /** The dataset whose rows drive this structure (empty if it could not be decided). */
+  driverDataset: string;
+  /** How many rows the driver dataset has, and how many of them were run (the sample). */
+  driverRowCount: number;
+  sampledRowCount: number;
   /** For each output row and field, if collectLineage is on. */
   lineage?: (CellLineage | undefined)[][];
 }

@@ -79,6 +79,19 @@ describe('run definition and result', () => {
     expect(RunDefinitionSchema.safeParse({ ...base, runType: 'partial' }).success).toBe(false);
   });
 
+  it('accepts a spread sample (evenly spaced rows) and rejects a zero or fractional count', () => {
+    const base = { id: 'run-1', snapshotId: 'snap-1', runType: 'test', inputs: [] };
+    expect(
+      RunDefinitionSchema.safeParse({ ...base, sample: { kind: 'spread', count: 100 } }).success,
+    ).toBe(true);
+    expect(
+      RunDefinitionSchema.safeParse({ ...base, sample: { kind: 'spread', count: 0 } }).success,
+    ).toBe(false);
+    expect(
+      RunDefinitionSchema.safeParse({ ...base, sample: { kind: 'firstRows', count: 1.5 } }).success,
+    ).toBe(false);
+  });
+
   it('result carries per-dataset input counts, per-structure output counts and diagnostics', () => {
     const r = RunResultSchema.safeParse({
       runId: 'run-1',

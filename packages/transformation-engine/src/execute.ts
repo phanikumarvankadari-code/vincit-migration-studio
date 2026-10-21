@@ -170,6 +170,9 @@ export function executeMapping(
       },
       rowStatus: [],
       driverRows: [],
+      driverDataset: '',
+      driverRowCount: 0,
+      sampledRowCount: 0,
       ...(options.collectLineage ? { lineage: [] } : {}),
     };
     const structCtx = { targetStructureId: structure.id } as Partial<Diagnostic>;
@@ -267,10 +270,27 @@ export function executeMapping(
 
     const byField = new Map(mappings.map((m) => [m.targetFieldId as string, m]));
     const driverRows = rowsOf.get(driver)!;
-    const count =
-      options.limit === undefined ? driverRows.length : Math.min(options.limit, driverRows.length);
+    const total = driverRows.length;
+    let selected: number[];
+    if (options.sampleRows) {
+      const picked = options.sampleRows({
+        targetStructureId: structure.id,
+        driverDatasetId: driver,
+        rowCount: total,
+      });
+      selected = [
+        ...new Set(picked.filter((n) => Number.isInteger(n) && n >= 0 && n < total)),
+      ].sort((a, b) => a - b);
+    } else {
+      const count =
+        options.limit === undefined ? total : Math.min(Math.max(0, options.limit), total);
+      selected = Array.from({ length: count }, (_, n) => n);
+    }
+    output.driverDataset = driver;
+    output.driverRowCount = total;
+    output.sampledRowCount = selected.length;
 
-    for (let i = 0; i < count; i++) {
+    for (const i of selected) {
       const ctx = new Map<string, number | undefined>([[driver, i]]);
       const driverNo = i + 1;
       const rowDiags: Diagnostic[] = [];
