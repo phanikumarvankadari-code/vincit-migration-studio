@@ -12,3 +12,4 @@ export * from './run.js';
 export * from './validate.js';
 export * from './serialize.js';
 export * from './rows.js';
+export * from './completeness.js';
