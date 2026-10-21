@@ -417,8 +417,17 @@ describe('stage status and readiness', () => {
       summary: 'Results out of date',
     });
     expect(stageStatuses({ ...s, lastRun: clean }).ready).toEqual({
-      state: 'complete',
+      state: 'inProgress',
       summary: 'Ready to save a snapshot',
+    });
+    const marked = {
+      snapshot: { name: 'SIT Cycle 1' },
+      marker: 'approved',
+      markedAt: 'x',
+    } as never;
+    expect(stageStatuses({ ...s, lastRun: clean, snapshots: [marked] }).ready).toEqual({
+      state: 'complete',
+      summary: 'Snapshot "SIT Cycle 1" is approved',
     });
     expect(stageStatuses({ ...s, lastRun: failing }).ready).toEqual({
       state: 'inProgress',
@@ -439,6 +448,8 @@ describe('stage status and readiness', () => {
       ['A test run has been done', false],
       ['The last test run has no errors', false],
       ['The test results are up to date', false],
+      ['A snapshot is saved', false],
+      ['A snapshot is marked Ready or Approved', false],
     ]);
     expect(
       readinessChecklist(newState())

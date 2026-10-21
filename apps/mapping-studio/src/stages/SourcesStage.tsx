@@ -15,6 +15,7 @@ import {
 import type { Diagnostic, Relationship } from '@mms/mapping-core';
 import { useState } from 'react';
 import { FileButton, Notices, Section, SeverityBadge } from '../components/common';
+import { datasetsWithoutData } from '@mms/studio-model';
 import { useStudio } from '../context';
 import { notice, readDictionaryFile, readSourceFiles, type Notice } from '../lib/files';
 
@@ -43,11 +44,17 @@ export function SourcesStage() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const sources = state.project.sourceDefinitions;
   const rels = state.project.mappingDefinition.relationships;
+  const missing = datasetsWithoutData(state);
 
   const addFiles = async (files: File[]) => {
     const { imported, notices: n } = await readSourceFiles(files);
     setNotices((cur) => [...cur, ...n]);
     for (const i of imported) send({ type: 'sourceAdded', imported: i });
+  };
+  const attachRows = async (files: File[]) => {
+    const { imported, notices: n } = await readSourceFiles(files);
+    setNotices((cur) => [...cur, ...n]);
+    for (const i of imported) send({ type: 'rowsAttached', imported: i });
   };
   const addDictionary = async (files: File[]) => {
     const r = await readDictionaryFile(files[0]!);
@@ -91,6 +98,24 @@ export function SourcesStage() {
           notices={notices}
           onDismiss={(id) => setNotices((cur) => cur.filter((n) => n.id !== id))}
         />
+        {missing.length > 0 && (
+          <MessageBar intent="warning" data-testid="missing-data-banner">
+            <MessageBarBody>
+              The rows of{' '}
+              {missing.length === 1 ? 'one dataset are' : `${missing.length} datasets are`} not
+              loaded ({missing.map((m) => m.name).join(', ')}). A project keeps the mapping, not the
+              rows: choose the same source files again to test or run.
+            </MessageBarBody>
+            <FileButton
+              label="Load source data"
+              accept=".csv,.xlsx"
+              multiple
+              appearance="primary"
+              testId="reattach-input"
+              onFiles={(f) => void attachRows(f)}
+            />
+          </MessageBar>
+        )}
         {state.dictionary && (
           <MessageBar intent="success">
             <MessageBarBody data-testid="dictionary-loaded">
@@ -147,7 +172,8 @@ export function SourcesStage() {
                       <AccordionItem key={ds.id} value={ds.id}>
                         <AccordionHeader>
                           <span data-testid={`dataset-${ds.name}`}>
-                            {ds.name} — {profile?.rowCount ?? 0} rows, {ds.fields.length} fields
+                            {ds.name} — {profile ? `${profile.rowCount} rows` : 'data not loaded'},{' '}
+                            {ds.fields.length} fields
                           </span>
                         </AccordionHeader>
                         <AccordionPanel>

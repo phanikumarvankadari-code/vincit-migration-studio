@@ -15,7 +15,7 @@ Each milestone ends with a demo check: something you can run or see.
 | M5 | Routines | 014 dates, 015 UUID, 016 text, 017 numeric, 018 chaining, 019 JS sandbox | `1/1/26` converts only with explicit format. Chain runs in order. Sandboxed JS cannot reach files or network. |
 | M6 | Test engine | 020 | Run 100 / 1,000 / all rows against a mapping, no screen. Diagnostics list errors with row, field and mapping. |
 | M7 | Screen | 021 app shell, 022 mapping table, 023 React Flow view, 024 result grid, 025 validation, 026 lineage | Table and Visual Mapper both edit one mapping. Result grid plus diagnostics list. Click a value to trace it to source. |
-| M8 | Finish | 027 snapshots, 028 local output, 029 Profit Center end-to-end | Named snapshot, Ready/Approved, full run writes target files plus an error file. |
+| M8 ✅ | Finish | 027 snapshots, 028 local output, 029 Profit Center end-to-end | Named snapshot, Ready/Approved, full run writes target files plus an error file. |
 | M9 | Container | 030 container packaging (spec to be written) | `docker build` produces an image. `docker run` serves the app on localhost. Projects and files live on a mounted volume. Playwright smoke test passes against the running container. |
 
 ## Decisions already made

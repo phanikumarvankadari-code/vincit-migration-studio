@@ -34,18 +34,21 @@ export function stageStatuses(
   const pending = rels.filter((r) => r.status === 'suggested').length;
   const confirmed = rels.filter((r) => r.status === 'confirmed').length;
 
+  const missing = datasets.filter((d) => !state.data[d.id]).length;
   const sources: StageStatus =
     datasets.length === 0
       ? { state: 'notStarted', summary: 'No files yet' }
-      : pending > 0
-        ? {
-            state: 'attention',
-            summary: `${plural(datasets.length, 'dataset')}, ${plural(pending, 'join')} to confirm`,
-          }
-        : {
-            state: 'complete',
-            summary: `${plural(datasets.length, 'dataset')}${confirmed > 0 ? `, ${plural(confirmed, 'join')} confirmed` : ''}`,
-          };
+      : missing > 0
+        ? { state: 'attention', summary: `${plural(datasets.length, 'dataset')}, data not loaded` }
+        : pending > 0
+          ? {
+              state: 'attention',
+              summary: `${plural(datasets.length, 'dataset')}, ${plural(pending, 'join')} to confirm`,
+            }
+          : {
+              state: 'complete',
+              summary: `${plural(datasets.length, 'dataset')}${confirmed > 0 ? `, ${plural(confirmed, 'join')} confirmed` : ''}`,
+            };
 
   const structures = p.targetDefinition?.structures ?? [];
   const target: StageStatus =
@@ -100,13 +103,19 @@ export function stageStatuses(
   if (target.state !== 'complete') blockers.push('target');
   if (map.state !== 'complete') blockers.push('mappings');
   if (test.state !== 'complete') blockers.push('a clean test');
+  const marked = [...state.snapshots].reverse().find((r) => r.marker !== 'none');
   const ready: StageStatus =
-    blockers.length === 0
-      ? { state: 'complete', summary: 'Ready to save a snapshot' }
-      : {
+    blockers.length > 0
+      ? {
           state: blockers.length === 4 ? 'notStarted' : 'inProgress',
           summary: `Waiting for ${blockers.join(', ')}`,
-        };
+        }
+      : marked
+        ? {
+            state: 'complete',
+            summary: `Snapshot "${marked.snapshot.name}" is ${marked.marker === 'approved' ? 'approved' : 'ready'}`,
+          }
+        : { state: 'inProgress', summary: 'Ready to save a snapshot' };
 
   return { sources, target, map, test, ready };
 }
@@ -162,6 +171,12 @@ export function readinessChecklist(
       stage: 'test',
       label: 'The test results are up to date',
       done: state.lastRun !== undefined && !state.runStale,
+    },
+    { stage: 'ready', label: 'A snapshot is saved', done: state.snapshots.length > 0 },
+    {
+      stage: 'ready',
+      label: 'A snapshot is marked Ready or Approved',
+      done: state.snapshots.some((r) => r.marker !== 'none'),
     },
   ];
 }

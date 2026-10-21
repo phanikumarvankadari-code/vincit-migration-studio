@@ -39,7 +39,7 @@ test.describe('Visual Mapper (SPEC-023)', () => {
     await expect(node(page, 'step|m-tf-Profit-Center-2|0')).toContainText('Parse Date');
     for (const n of [1, 2, 3, 4]) await expect(node(page, tgtId(n))).toBeVisible();
     await expect(node(page, tgtId(3))).toContainText('Not mapped');
-    await expect(node(page, tgtId(2))).toContainText('Required'.slice(0, 0) + 'Routine');
+    await expect(node(page, tgtId(2))).toContainText('Routine');
     // source to target (1 link), and source to step to target (2 links)
     await expect(page.locator('.react-flow__edge')).toHaveCount(3);
   });

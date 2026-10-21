@@ -31,6 +31,8 @@
     "@mms/studio-model": "^0.0.0",
     "@mms/target-parser": "^0.0.0",
     "@mms/test-engine": "^0.0.0",
-    "@mms/transformation-engine": "^0.0.0"
+    "@mms/transformation-engine": "^0.0.0",
+    "@mms/file-export": "^0.0.0",
+    "@mms/local-run": "^0.0.0"
   }
 }

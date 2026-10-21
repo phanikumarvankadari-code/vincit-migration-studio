@@ -39,10 +39,11 @@ export const RunResultSchema = z.strictObject({
   generatedFiles: z
     .array(
       z.strictObject({
-        kind: z.enum(['output', 'errors']),
+        /** output: rows that passed; errors: rows that did not (with reasons); diagnostics: every problem; summary: the run summary. */
+        kind: z.enum(['output', 'errors', 'diagnostics', 'summary']),
         targetStructureId: TargetStructureIdSchema.optional(),
         fileName: z.string().min(1),
-        format: z.enum(['csv', 'xlsx']),
+        format: z.enum(['csv', 'xlsx', 'json']),
       }),
     )
     .optional(),

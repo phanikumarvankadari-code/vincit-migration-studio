@@ -6,3 +6,5 @@ export * from './graph.js';
 export * from './readiness.js';
 export * from './target-import.js';
 export * from './preview.js';
+export * from './snapshots.js';
+export * from './persistence.js';
