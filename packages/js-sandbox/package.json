@@ -1,0 +1,17 @@
+{
+  "name": "@mms/js-sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mms/mapping-core": "^0.0.0",
+    "@mms/transformation-engine": "^0.0.0",
+    "quickjs-emscripten": "0.32.0"
+  }
+}

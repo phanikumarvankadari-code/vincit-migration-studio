@@ -30,6 +30,11 @@ export type JavaScriptExecutor = (args: {
   inputs: readonly SourceValue[];
   /** Values of the current row by source field ID, for the datasets the mapping can reach. */
   row: Readonly<Record<string, SourceValue>>;
+  /**
+   * Approved lookup helper. Only lookups the mapping declares in `declaredLookupIds` can be used.
+   * Returns undefined when the lookup is not declared or the key has no entry.
+   */
+  lookup: (lookupId: string, key: SourceValue) => SourceValue | undefined;
 }) => RoutineResult;
 
 export interface ExecuteOptions {
