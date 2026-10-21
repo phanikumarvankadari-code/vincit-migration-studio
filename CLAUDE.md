@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) M4 (`packages/transformation-engine`) and M5 (`packages/routine-library`, `packages/js-sandbox`) and M6 (`packages/test-engine`) are done. Next: M7 screen (SPEC-021 to 026), the first web milestone: tests must include Playwright. The sandbox tests need no extra setup (QuickJS WASM ships with the npm package). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
+M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `packages/profiler`) and M3 (`packages/relationships`, `packages/target-parser`) M4 (`packages/transformation-engine`) and M5 (`packages/routine-library`, `packages/js-sandbox`) and M6 (`packages/test-engine`) and M7 (`packages/studio-model`, `apps/mapping-studio`) are done. Next: M8 snapshots, output and the Profit Center end-to-end (SPEC-027 to 029). The sandbox tests need no extra setup (QuickJS WASM ships with the npm package). Milestone plan: `docs/MILESTONES.md`. Agent rules: `AGENTS.md`. Model decisions: `docs/ARCHITECTURE.md` section 14.
 
 ## Commands
 
@@ -12,7 +12,11 @@ M0 (tooling, docs), M1 (`packages/mapping-core`), M2 (`packages/file-import`, `p
 npm test                 # vitest run (tests/** and packages/*/test/**)
 npx vitest run tests/milestones/m0-setup/m0-setup.test.ts   # single file
 npx vitest run -t "M0-02"                                   # single test by name
-npm run typecheck        # tsc for tests and for packages/mapping-core src (no DOM/Node types)
+npm run typecheck        # tsc for tests, every package (no DOM/Node types in core packages) and the app
+npm run dev              # start the app on http://127.0.0.1:5173
+npm run build            # type-check and build the app
+npm run e2e              # Playwright browser tests (Chromium; starts the dev server)
+npx playwright test -g "lookup" --project chromium   # one e2e test by name (run from apps/mapping-studio)
 npm run lint             # eslint
 npm run coverage         # v8 coverage
 ```

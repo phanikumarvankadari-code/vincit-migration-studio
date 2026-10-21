@@ -1,0 +1,36 @@
+{
+  "name": "@mms/mapping-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "9.74.10",
+    "@fluentui/react-icons": "2.0.344",
+    "@tanstack/react-virtual": "3.14.21",
+    "@xyflow/react": "12.12.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@mms/file-import": "^0.0.0",
+    "@mms/mapping-core": "^0.0.0",
+    "@mms/profiler": "^0.0.0",
+    "@mms/relationships": "^0.0.0",
+    "@mms/routine-library": "^0.0.0",
+    "@mms/studio-model": "^0.0.0",
+    "@mms/target-parser": "^0.0.0",
+    "@mms/test-engine": "^0.0.0",
+    "@mms/transformation-engine": "^0.0.0"
+  }
+}

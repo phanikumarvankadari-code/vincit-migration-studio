@@ -1,5 +1,6 @@
 export * from './sample.js';
 export {
+  datasetsRead,
   preflight,
   suggestDrivers,
   type DriverSuggestion,
