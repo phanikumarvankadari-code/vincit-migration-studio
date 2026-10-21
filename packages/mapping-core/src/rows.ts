@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { SourceDatasetIdSchema, SourceFieldIdSchema } from './primitives.js';
+import {
+  SourceDatasetIdSchema,
+  SourceFieldIdSchema,
+  TargetFieldIdSchema,
+  TargetStructureIdSchema,
+} from './primitives.js';
 
 /** A cell value. null = absent/blank cell. '' = an explicitly empty string. */
 export const SourceValueSchema = z.string().nullable();
@@ -15,3 +20,11 @@ export const SourceRowsSchema = z.strictObject({
   rows: z.array(z.array(SourceValueSchema)),
 });
 export type SourceRows = z.infer<typeof SourceRowsSchema>;
+
+/** Output rows of one target structure. Rows always stay associated with their structure. */
+export const TargetRowsSchema = z.strictObject({
+  targetStructureId: TargetStructureIdSchema,
+  fieldIds: z.array(TargetFieldIdSchema),
+  rows: z.array(z.array(SourceValueSchema)),
+});
+export type TargetRows = z.infer<typeof TargetRowsSchema>;

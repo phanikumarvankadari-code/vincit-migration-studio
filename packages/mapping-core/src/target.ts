@@ -20,6 +20,10 @@ export const TargetFieldSchema = z.strictObject({
   required: z.boolean(),
   isKey: z.boolean(),
   description: z.string().optional(),
+  /** Group heading from a structure definition file (for example "Address"). */
+  group: z.string().optional(),
+  /** Original importance text from the definition (for example "mandatory for sheet"). */
+  importance: z.string().optional(),
 });
 export type TargetField = z.infer<typeof TargetFieldSchema>;
 
@@ -47,6 +51,8 @@ export const TargetStructureSchema = z.strictObject({
   name: z.string().min(1),
   displayName: z.string().min(1),
   technicalName: z.string().min(1).optional(),
+  /** Original importance text of the structure (for example "mandatory"). */
+  importance: z.string().optional(),
   fields: z.array(TargetFieldSchema),
   generation: RowGenerationSchema.optional(),
   parent: ParentLinkSchema.optional(),
