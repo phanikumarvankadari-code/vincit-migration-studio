@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BUKRS_SMALL, goToStage, loadSmallTarget, mapSmallProject, runTest } from './helpers';
+import {
+  BUKRS_SMALL,
+  goToStage,
+  loadSmallTarget,
+  mapSmallProject,
+  openWorkspaceObject,
+  runTest,
+} from './helpers';
 
 /** Files in the browser's file storage, as paths from its root (the workspace root in browser-storage mode). */
 const files = (page: Page) =>
@@ -26,13 +33,7 @@ const readFile = (page: Page, path: string) =>
   }, path);
 
 async function openObject(page: Page): Promise<void> {
-  await page.goto('/');
-  await page.getByLabel('Customer name').fill('Acme Oy');
-  await page.getByRole('button', { name: 'Create customer' }).click();
-  await page.getByLabel('Business object name').fill('Profit Center');
-  await page.getByRole('button', { name: 'Add business object' }).click();
-  await page.getByTestId('object-Profit Center').getByRole('button', { name: 'Open' }).click();
-  await expect(page.getByTestId('breadcrumb')).toContainText('Acme Oy › Profit Center');
+  await openWorkspaceObject(page);
 }
 
 /** Small clean data, mapped, tested and approved, inside the open business object. */
@@ -99,9 +100,9 @@ test.describe('Outputs to the workspace folder (SPEC-034)', () => {
       ].join('\r\n'),
     );
     await page.getByTestId('back-to-customer').click();
-    await expect(page.getByTestId('object-lastrun-Profit Center')).toContainText(
-      `Last output: ${folder}`,
-    );
+    await expect(page.getByTestId('object-lastrun-Profit Center')).toContainText(folder);
+    await expect(page.getByTestId('latest-outputs')).toContainText(folder);
+    await expect(page.getByTestId('kpi-Runs saved')).toContainText('1');
   });
 
   test('AC-4 with the switch off nothing is saved until the button is used; each run gets its own folder', async ({

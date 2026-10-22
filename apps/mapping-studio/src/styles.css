@@ -5,7 +5,226 @@ body,
   margin: 0;
 }
 body {
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  background: #fafbf5;
+  color: #15181e;
+}
+:root {
+  --bg: #fafbf5;
+  --surface: #ffffff;
+  --soft: #f4f6ee;
+  --line: #e3e5dc;
+  --line-strong: #c9ccc0;
+  --ink: #15181e;
+  --ink-2: #3a3f4b;
+  --muted: #565b68;
+  --brand: #1f3a8a;
+  --brand-dark: #142a66;
+  --brand-soft: #e5eafb;
+}
+.mms-page {
+  min-height: 100%;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.mms-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 48px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.mms-main {
+  max-width: 1344px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 28px 48px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.mms-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.mms-brand img {
+  display: block;
+  border-radius: 8px;
+}
+.mms-h1 {
+  margin: 0;
+  line-height: 1.15;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.mms-h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.mms-sub {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.mms-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.mms-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+.mms-card {
+  text-decoration: none;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.mms-card:hover {
+  box-shadow: 0 6px 18px rgba(21, 24, 30, 0.1);
+  border-color: #b9beae;
+}
+.mms-card:focus-visible,
+.mms-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.mms-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.mms-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #e6e8e0;
+  overflow: hidden;
+}
+.mms-bar > div {
+  height: 100%;
+}
+.mms-scroll {
+  overflow-x: auto;
+}
+.mms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  min-width: 860px;
+}
+.mms-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--soft);
+  padding: 12px;
+  font-weight: 600;
+}
+.mms-table td {
+  padding: 13px 12px;
+  border-top: 1px solid #eceee5;
+  vertical-align: middle;
+}
+.mms-table tr.mms-row:hover td {
+  background: var(--soft);
+}
+.mms-table th:first-child,
+.mms-table td:first-child {
+  padding-left: 20px;
+}
+.mms-table th:last-child,
+.mms-table td:last-child {
+  padding-right: 20px;
+}
+.mms-link {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.mms-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+.mms-row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+.mms-grid4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.mms-kpi {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.mms-kpi .v {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+}
+.mms-muted {
+  color: var(--muted);
+}
+.mms-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+@media (max-width: 720px) {
+  .mms-topbar,
+  .mms-main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .mms-h1 {
+    font-size: 26px;
+  }
 }
 table.data {
   border-collapse: collapse;

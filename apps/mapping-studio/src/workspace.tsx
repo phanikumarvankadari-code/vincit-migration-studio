@@ -1,8 +1,12 @@
 import {
   DICTIONARY_DIR,
+  OUTPUT_DIR,
   SOURCES_DIR,
   TARGET_DIR,
+  ARCHIVE_DIR,
   archive,
+  copyBetweenPorts,
+  countFiles,
   createCustomer,
   createObject,
   inputPath,
@@ -15,11 +19,14 @@ import {
   openWorkspace,
   readProject,
   stamp,
+  uniqueName,
   writeProject,
   type BusinessObject,
   type CustomerEntry,
   type ObjectEntry,
+  type RunEntry,
   type StoreContext,
+  wrongFolderMessage,
 } from '@mms/workspace-files';
 import {
   createStudioState,
@@ -27,6 +34,7 @@ import {
   encodeWorkspace,
   summarizeWorkspace,
   type ObjectSummary,
+  type Stage,
   type Workspace,
 } from '@mms/studio-model';
 import {
@@ -49,11 +57,19 @@ import {
   requestFolderPermission,
   saveFolderHandle,
 } from './lib/folder-store';
+import { MIME, downloadFile } from './lib/storage';
+import { toZip } from '@mms/file-export';
 import { deleteFromLibrary, listProjects, readLibraryText, type LibraryEntry } from './lib/storage';
 
 export interface ObjectCard extends ObjectEntry {
+  customerFolder: string;
+  customerName: string;
+  /** Runs saved in the object's output folder, newest first. */
+  runs: RunEntry[];
   /** The newest run saved in the object's output folder. */
-  lastRun: { folder: string; files: number } | undefined;
+  lastRun: RunEntry | undefined;
+  /** What the newest run's summary says (errors found), when it can be read. */
+  lastResult: { errors: number } | undefined;
   summary: ObjectSummary | undefined;
   /** Why the project file could not be read, if it could not. */
   problem: string | undefined;
@@ -65,6 +81,17 @@ export interface OpenObject {
   objectFolder: string;
   object: BusinessObject;
   workspace: Workspace;
+  /** Stage to start on (for example Ready, to run all rows). */
+  stage?: Stage | undefined;
+}
+
+export interface PortfolioCustomer {
+  entry: CustomerEntry;
+  cards: ObjectCard[];
+}
+
+export interface ObjectFiles {
+  files: { kind: 'SOURCE' | 'TARGET' | 'DICTIONARY'; name: string }[];
 }
 
 type Result = { ok: true } | { ok: false; message: string };
@@ -80,8 +107,17 @@ export interface WorkspaceApi {
   storageLabel: string;
   connection: Connection;
   canChooseFolder: boolean;
-  chooseFolder: () => Promise<Result>;
+  /** `chosen` is false when the person closed the picker without choosing. */
+  chooseFolder: () => Promise<{ ok: true; chosen: boolean } | { ok: false; message: string }>;
   reconnectFolder: () => Promise<Result>;
+  /** Copies the selected customer from browser storage into a chosen OneDrive folder, archives the browser copy and switches to the folder. */
+  /** Customers still kept in browser storage while a folder is the workspace. */
+  browserCustomerCount: number;
+  /** Copies every customer kept in browser storage into the current folder workspace and archives the browser copies. */
+  moveBrowserCustomersToFolder: () => Promise<Result>;
+  moveCustomerToFolder: () => Promise<
+    { ok: true; chosen: boolean } | { ok: false; message: string }
+  >;
   useBrowserStorage: () => Promise<Result>;
   /** Copies a file the user added into the object's sources, target or dictionary folder. */
   saveInput: (kind: 'sources' | 'target' | 'dictionary', file: File) => Promise<Result>;
@@ -100,15 +136,27 @@ export interface WorkspaceApi {
   /** Changes when the open project is reloaded from disk, so the screen starts again from it. */
   openNonce: number;
   customers: CustomerEntry[];
+  /** The customer whose home is shown; undefined shows All customers. */
   customerFolder: string | undefined;
-  selectCustomer: (folder: string) => void;
+  selectCustomer: (folder: string | undefined) => void;
+  /** Every customer with its business objects, for the All customers page. */
+  portfolio: PortfolioCustomer[];
+  /** The business objects of the selected customer. */
   cards: ObjectCard[];
+  search: string;
+  setSearch: (s: string) => void;
+  /** The Where files are kept dialog; it lives above the pages so it survives a page change. */
+  storageDialog: boolean;
+  setStorageDialog: (open: boolean) => void;
+  objectDetail: (customerFolder: string, objectFolder: string) => Promise<ObjectFiles>;
+  /** Offers the files of one saved run as a ZIP download. */
+  downloadRun: (customerFolder: string, objectFolder: string, runFolder: string) => Promise<Result>;
   addCustomer: (name: string, notes: string) => Promise<Result>;
   addObject: (name: string, entity: string) => Promise<Result>;
-  archiveObject: (folder: string) => Promise<Result>;
+  archiveObject: (folder: string, customerFolder?: string) => Promise<Result>;
   archiveCustomer: () => Promise<Result>;
   open: OpenObject | undefined;
-  openObject: (folder: string) => Promise<Result>;
+  openObject: (folder: string, customerFolder?: string, stage?: Stage) => Promise<Result>;
   closeObject: () => Promise<void>;
   registerFlush: (flush: (() => Promise<void>) | undefined) => void;
   /** Saves the open project into its folder. */
@@ -159,7 +207,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | undefined>();
   const [customers, setCustomers] = useState<CustomerEntry[]>([]);
   const [customerFolder, setCustomerFolder] = useState<string | undefined>();
-  const [cards, setCards] = useState<ObjectCard[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioCustomer[]>([]);
+  const [search, setSearch] = useState('');
+  const [storageDialog, setStorageDialog] = useState(false);
+  const [browserCustomerCount, setBrowserCustomerCount] = useState(0);
   const [open, setOpen] = useState<OpenObject | undefined>();
   const [unfiled, setUnfiled] = useState<LibraryEntry[]>(() => listProjects());
   const [connection, setConnection] = useState<Connection>({ kind: 'browser' });
@@ -176,45 +227,65 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Saves go one after the other, each with the revision left by the one before.
   const saves = useRef<Promise<unknown>>(Promise.resolve());
 
-  const loadCards = useCallback(async (folder: string | undefined) => {
+  /** Reads every customer and its business objects (small enough to read in one go). */
+  const loadAll = useCallback(async (): Promise<CustomerEntry[]> => {
     const ctx = ctxRef.current;
-    if (!ctx || !folder) {
-      setCards([]);
-      return;
+    if (!ctx) return [];
+    const list = await listCustomers(ctx.port);
+    const out: PortfolioCustomer[] = [];
+    for (const entry of list) {
+      const cards: ObjectCard[] = [];
+      for (const e of await listObjects(ctx.port, entry.folder)) {
+        const text = e.hasProject ? await readProject(ctx.port, entry.folder, e.folder) : undefined;
+        const decoded = text === undefined ? undefined : decodeWorkspace(text);
+        const runs = await listRuns(ctx.port, entry.folder, e.folder);
+        let lastResult: ObjectCard['lastResult'];
+        if (runs[0]) {
+          const t = await ctx.port.readText([
+            entry.folder,
+            e.folder,
+            OUTPUT_DIR,
+            runs[0].folder,
+            'run-summary.json',
+          ]);
+          try {
+            const j = t === undefined ? undefined : (JSON.parse(t) as { errorCount?: unknown });
+            if (typeof j?.errorCount === 'number') lastResult = { errors: j.errorCount };
+          } catch {
+            /* a summary that cannot be read just has no result line */
+          }
+        }
+        cards.push({
+          ...e,
+          customerFolder: entry.folder,
+          customerName: entry.customer.name,
+          runs,
+          lastRun: runs[0],
+          lastResult,
+          summary: decoded?.ok ? summarizeWorkspace(decoded.value) : undefined,
+          problem:
+            decoded && !decoded.ok ? decoded.issues.map((i) => i.message).join(' ') : undefined,
+        });
+      }
+      out.push({ entry, cards });
     }
-    const entries = await listObjects(ctx.port, folder);
-    const out: ObjectCard[] = [];
-    for (const e of entries) {
-      const text = e.hasProject ? await readProject(ctx.port, folder, e.folder) : undefined;
-      const decoded = text === undefined ? undefined : decodeWorkspace(text);
-      const runs = await listRuns(ctx.port, folder, e.folder);
-      out.push({
-        ...e,
-        lastRun: runs[0],
-        summary: decoded?.ok ? summarizeWorkspace(decoded.value) : undefined,
-        problem:
-          decoded && !decoded.ok ? decoded.issues.map((i) => i.message).join(' ') : undefined,
-      });
-    }
-    setCards(out);
+    setCustomers(list);
+    setPortfolio(out);
+    return list;
   }, []);
 
   const refreshCustomers = useCallback(
     async (prefer?: string): Promise<string | undefined> => {
-      const ctx = ctxRef.current;
-      if (!ctx) return undefined;
-      const list = await listCustomers(ctx.port);
-      setCustomers(list);
-      const pick = list.find((c) => c.folder === prefer)?.folder ?? list[0]?.folder;
+      const list = await loadAll();
+      const pick = list.find((c) => c.folder === prefer)?.folder;
       setCustomerFolder(pick);
-      await loadCards(pick);
       return pick;
     },
-    [loadCards],
+    [loadAll],
   );
 
   const openObject = useCallback(
-    async (folder: string, customerOverride?: string): Promise<Result> => {
+    async (folder: string, customerOverride?: string, stage?: Stage): Promise<Result> => {
       const ctx = ctxRef.current;
       const cf = customerOverride ?? customerFolder;
       if (!ctx || !cf) return { ok: false, message: 'No customer is selected.' };
@@ -241,8 +312,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         objectFolder: folder,
         object: entry.object,
         workspace: decoded.value,
+        stage,
       };
       openRef.current = o;
+      setCustomerFolder(cf);
       setRowsLoaded(false);
       setConflict(undefined);
       pending.current = undefined;
@@ -254,17 +327,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [customerFolder],
   );
 
-  /** Makes `root` the workspace: creates or checks its marker, then loads the customers. */
-  const connectTo = useCallback(
-    async (root: FileSystemDirectoryHandle, conn: Connection): Promise<Result> => {
+  /** Checks a folder and makes it ready as a workspace (a folder with other files gets a folder of its own inside). */
+  const prepareRoot = useCallback(
+    async (
+      root: FileSystemDirectoryHandle,
+    ): Promise<{ ok: true; ctx: StoreContext } | { ok: false; message: string }> => {
       let port = handlePort(root);
       let kind = await inspectRoot(port);
+      if (kind === 'customer' || kind === 'object') {
+        return { ok: false, message: wrongFolderMessage(kind) };
+      }
       if (kind === 'other') {
         // A folder that already holds other files (for example the OneDrive top folder): keep to a folder of our own inside it.
         const sub = await root.getDirectoryHandle('Migration Mapping Studio', { create: true });
         port = handlePort(sub);
         kind = await inspectRoot(port);
-        if (kind === 'other')
+        if (kind !== 'empty' && kind !== 'workspace')
           return {
             ok: false,
             message:
@@ -273,12 +351,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       const ctx: StoreContext = { port, now: nowIso, newId };
       const opened = await openWorkspace(ctx);
-      if (!opened.ok) return opened;
-      ctxRef.current = ctx;
+      return opened.ok ? { ok: true, ctx } : opened;
+    },
+    [],
+  );
+
+  /** Makes `root` the workspace: creates or checks its marker, then loads the customers. */
+  const connectTo = useCallback(
+    async (root: FileSystemDirectoryHandle, conn: Connection): Promise<Result> => {
+      const prepared = await prepareRoot(root);
+      if (!prepared.ok) return prepared;
+      ctxRef.current = prepared.ctx;
       setConnection(conn);
       return { ok: true };
     },
-    [],
+    [prepareRoot],
   );
 
   useEffect(() => {
@@ -340,6 +427,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [connectTo, refreshCustomers],
   );
+
+  // While a folder is the workspace, customers left in browser storage are counted, so they can be moved.
+  useEffect(() => {
+    if (connection.kind !== 'folder') return;
+    let cancelled = false;
+    void browserStorageRoot()
+      .then((root) => listCustomers(handlePort(root)))
+      .then((list) => {
+        if (!cancelled) setBrowserCustomerCount(list.length);
+      })
+      .catch(() => {
+        if (!cancelled) setBrowserCustomerCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, portfolio]);
 
   const checkChangedElsewhere = useCallback(async () => {
     const ctx = ctxRef.current;
@@ -408,8 +512,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       chooseFolder: async () => {
         try {
           const picked = await pickFolder();
-          if (!picked) return { ok: true };
-          return await switchTo(picked, { kind: 'folder', name: picked.name }, true);
+          if (!picked) return { ok: true as const, chosen: false };
+          const r = await switchTo(picked, { kind: 'folder', name: picked.name }, true);
+          return r.ok ? { ok: true as const, chosen: true } : r;
         } catch (e) {
           return {
             ok: false,
@@ -426,6 +531,81 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const r = await switchTo(h, { kind: 'folder', name: h.name }, true);
         if (r.ok) setPhase('ready');
         return r;
+      },
+      browserCustomerCount: connection.kind === 'folder' ? browserCustomerCount : 0,
+      moveBrowserCustomersToFolder: async () => {
+        const dest = ctxRef.current;
+        if (!dest || connection.kind !== 'folder')
+          return { ok: false as const, message: 'Choose a OneDrive folder first.' };
+        try {
+          const source: StoreContext = {
+            port: handlePort(await browserStorageRoot()),
+            now: nowIso,
+            newId,
+          };
+          for (const c of await listCustomers(source.port)) {
+            const existing = (await dest.port.list([])).map((e) => e.name);
+            const target = uniqueName(c.folder, [...existing, ARCHIVE_DIR]);
+            const expected = await countFiles(source.port, [c.folder]);
+            await copyBetweenPorts(source.port, [c.folder], dest.port, [target]);
+            if ((await countFiles(dest.port, [target])) !== expected)
+              return {
+                ok: false as const,
+                message: `The copy of ${c.customer.name} in the folder is incomplete, so it was left in the browser.`,
+              };
+            const archived = await archive(source, [c.folder]);
+            if (!archived.ok) return archived;
+          }
+          await refreshCustomers();
+          return { ok: true as const };
+        } catch (e) {
+          return {
+            ok: false as const,
+            message: e instanceof Error ? e.message : 'The customers could not be moved.',
+          };
+        }
+      },
+      moveCustomerToFolder: async () => {
+        const source = ctxRef.current;
+        const cf = customerFolder;
+        if (!source || !cf || connection.kind !== 'browser')
+          return {
+            ok: false as const,
+            message: 'Only a customer kept in this browser can be moved to a folder.',
+          };
+        try {
+          const picked = await pickFolder();
+          if (!picked) return { ok: true as const, chosen: false };
+          const prepared = await prepareRoot(picked);
+          if (!prepared.ok) return prepared;
+          const dest = prepared.ctx;
+          const existing = (await dest.port.list([])).map((e) => e.name);
+          const target = uniqueName(cf, [...existing, ARCHIVE_DIR]);
+          const expected = await countFiles(source.port, [cf]);
+          await copyBetweenPorts(source.port, [cf], dest.port, [target]);
+          if ((await countFiles(dest.port, [target])) !== expected)
+            return {
+              ok: false as const,
+              message: 'The copy in the folder is incomplete, so nothing was changed here.',
+            };
+          // The browser copy is archived, not deleted.
+          const archived = await archive(source, [cf]);
+          if (!archived.ok) return archived;
+          ctxRef.current = dest;
+          setConnection({ kind: 'folder', name: picked.name });
+          await saveFolderHandle(picked);
+          permissionHandle.current = undefined;
+          openRef.current = undefined;
+          setOpen(undefined);
+          remember(undefined);
+          await refreshCustomers(target);
+          return { ok: true as const, chosen: true };
+        } catch (e) {
+          return {
+            ok: false as const,
+            message: e instanceof Error ? e.message : 'The customer could not be moved.',
+          };
+        }
       },
       useBrowserStorage: async () => {
         const r = await switchTo(await browserStorageRoot(), { kind: 'browser' }, false);
@@ -517,9 +697,43 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       customerFolder,
       selectCustomer: (folder) => {
         setCustomerFolder(folder);
-        void loadCards(folder);
+        void loadAll();
       },
-      cards,
+      portfolio,
+      cards: portfolio.find((p) => p.entry.folder === customerFolder)?.cards ?? [],
+      search,
+      setSearch,
+      storageDialog,
+      setStorageDialog,
+      downloadRun: async (cf, folder, runFolder) => {
+        const ctx = ctxRef.current;
+        if (!ctx) return { ok: false, message: 'The workspace is not ready.' };
+        const entries: { name: string; data: Uint8Array }[] = [];
+        for (const e of await ctx.port.list([cf, folder, OUTPUT_DIR, runFolder])) {
+          if (e.kind !== 'file') continue;
+          const data = await ctx.port.readBytes([cf, folder, OUTPUT_DIR, runFolder, e.name]);
+          if (data) entries.push({ name: e.name, data });
+        }
+        if (entries.length === 0) return { ok: false, message: 'That run has no files.' };
+        downloadFile(`${runFolder}.zip`, toZip(entries), MIME['zip']!);
+        return { ok: true };
+      },
+      objectDetail: async (cf, folder) => {
+        const ctx = ctxRef.current;
+        if (!ctx) return { files: [] };
+        const names = async (dir: string, kind: ObjectFiles['files'][number]['kind']) =>
+          (await ctx.port.list([cf, folder, dir]))
+            .filter((e) => e.kind === 'file')
+            .map((e) => ({ kind, name: e.name }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        return {
+          files: [
+            ...(await names(SOURCES_DIR, 'SOURCE')),
+            ...(await names(TARGET_DIR, 'TARGET')),
+            ...(await names(DICTIONARY_DIR, 'DICTIONARY')),
+          ],
+        };
+      },
       addCustomer: async (name, notes) => {
         const ctx = ctxRef.current;
         if (!ctx) return { ok: false, message: 'The workspace is not ready.' };
@@ -539,15 +753,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           freshProjectText(name.trim(), entity.trim() || name.trim()),
         );
         if (!r.ok) return r;
-        await loadCards(customerFolder);
+        await loadAll();
         return { ok: true };
       },
-      archiveObject: async (folder) => {
+      archiveObject: async (folder, cf) => {
         const ctx = ctxRef.current;
-        if (!ctx || !customerFolder) return { ok: false, message: 'Choose a customer first.' };
-        const r = await archive(ctx, [customerFolder, folder]);
+        const c = cf ?? customerFolder;
+        if (!ctx || !c) return { ok: false, message: 'Choose a customer first.' };
+        const r = await archive(ctx, [c, folder]);
         if (!r.ok) return r;
-        await loadCards(customerFolder);
+        await loadAll();
         return { ok: true };
       },
       archiveCustomer: async () => {
@@ -559,14 +774,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       open,
-      openObject: (folder) => openObject(folder),
+      openObject: (folder, cf, stage) => openObject(folder, cf, stage),
       closeObject: async () => {
         await flush.current?.();
         await saves.current;
         openRef.current = undefined;
         setOpen(undefined);
         remember(undefined);
-        await loadCards(customerFolder);
+        await loadAll();
       },
       registerFlush: (f) => {
         flush.current = f;
@@ -594,7 +809,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!r.ok) return r;
         deleteFromLibrary(id);
         setUnfiled(listProjects());
-        await loadCards(customerFolder);
+        await loadAll();
         return { ok: true };
       },
     }),
@@ -603,7 +818,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       error,
       customers,
       customerFolder,
-      cards,
+      portfolio,
+      browserCustomerCount,
+      storageDialog,
+      search,
       open,
       unfiled,
       connection,
@@ -612,7 +830,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       openNonce,
       persist,
       switchTo,
-      loadCards,
+      prepareRoot,
+      loadAll,
       refreshCustomers,
       openObject,
     ],

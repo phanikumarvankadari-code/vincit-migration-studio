@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addSmallSources, fixture, goToStage, loadSmallTarget } from './helpers';
+import {
+  addObject,
+  addSmallSources,
+  createFirstCustomer,
+  fixture,
+  goToStage,
+  loadSmallTarget,
+  openHome,
+  openObjectFromRow,
+} from './helpers';
 
 const DISK = 'OneDrive-Test';
 
@@ -68,21 +77,21 @@ const readDisk = (page: Page, path: string) =>
     [DISK, path],
   );
 
-async function setUpFolder(page: Page): Promise<void> {
+/** First run, choosing a OneDrive folder, creating the first customer in it. */
+async function setUpFolder(page: Page, customer = 'Acme Oy'): Promise<void> {
   await installPicker(page);
-  await page.goto('/');
-  await expect(page.getByTestId('home')).toBeVisible();
-  await page.getByRole('button', { name: 'Choose OneDrive folder' }).click();
-  await expect(page.getByTestId('storage-label')).toContainText(`folder “${DISK}”`);
+  await openHome(page);
+  await page.getByLabel('Customer name').fill(customer);
+  await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
+  await expect(page.getByTestId('home-title')).toHaveText(customer);
+  await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
 }
 
 async function customerAndObject(page: Page): Promise<void> {
-  await page.getByLabel('Customer name').fill('Acme Oy');
-  await page.getByRole('button', { name: 'Create customer' }).click();
-  await page.getByLabel('Business object name').fill('Profit Center');
-  await page.getByRole('button', { name: 'Add business object' }).click();
-  await page.getByTestId('object-Profit Center').getByRole('button', { name: 'Open' }).click();
-  await expect(page.getByTestId('breadcrumb')).toContainText('Acme Oy › Profit Center');
+  await setUpFolder(page);
+  await addObject(page, 'Profit Center');
+  await openObjectFromRow(page, 'Profit Center');
+  await expect(page.getByTestId('breadcrumb')).toContainText('Acme Oy');
 }
 
 test.describe('OneDrive folder (SPEC-033)', () => {
@@ -90,11 +99,7 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     page,
   }) => {
     await setUpFolder(page);
-    await page.getByLabel('Customer name').fill('Acme Oy');
-    await page.getByRole('button', { name: 'Create customer' }).click();
-    await page.getByLabel('Business object name').fill('Profit Center');
-    await page.getByRole('button', { name: 'Add business object' }).click();
-    await expect(page.getByTestId('object-Profit Center')).toBeVisible();
+    await addObject(page, 'Profit Center');
     expect(await disk(page)).toEqual([
       'Acme Oy/Profit Center/object.json',
       'Acme Oy/Profit Center/project.mms.json',
@@ -107,12 +112,10 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     page,
   }) => {
     await installPicker(page);
-    await page.goto('/');
+    await openHome(page);
     await writeDisk(page, 'holiday.jpg', 'not a workspace file');
-    await page.getByRole('button', { name: 'Choose OneDrive folder' }).click();
-    await expect(page.getByTestId('storage-label')).toContainText(DISK);
     await page.getByLabel('Customer name').fill('Acme Oy');
-    await page.getByRole('button', { name: 'Create customer' }).click();
+    await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
     await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
     const files = await disk(page);
     expect(files).toContain('holiday.jpg');
@@ -122,10 +125,24 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     expect(await readDisk(page, 'holiday.jpg')).toBe('not a workspace file');
   });
 
+  test('closing the picker without choosing a folder creates nothing and says so', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => {
+        throw new DOMException('cancelled', 'AbortError');
+      };
+    });
+    await openHome(page);
+    await page.getByLabel('Customer name').fill('Acme Oy');
+    await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
+    await expect(page.getByTestId('home-message')).toContainText('No folder was chosen');
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+  });
+
   test('AC-4 added files are copied into the object folder, the folder is used again after a reload, and the rows come back by themselves', async ({
     page,
   }) => {
-    await setUpFolder(page);
     await customerAndObject(page);
     await addSmallSources(page);
     await goToStage(page, 'target');
@@ -143,7 +160,7 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     expect(files).toContain('Acme Oy/Profit Center/dictionary/field_dictionary.csv');
 
     await page.reload();
-    await expect(page.getByTestId('breadcrumb')).toContainText('Acme Oy › Profit Center');
+    await expect(page.getByTestId('breadcrumb')).toContainText('Acme Oy');
     await goToStage(page, 'sources');
     await expect(page.getByTestId('dataset-CEPC')).toContainText(/\d+ rows/);
     await expect(page.getByTestId('dataset-CEPC')).not.toContainText('data not loaded');
@@ -152,7 +169,6 @@ test.describe('OneDrive folder (SPEC-033)', () => {
   });
 
   test('a dataset whose file is missing from sources is named in a banner', async ({ page }) => {
-    await setUpFolder(page);
     await customerAndObject(page);
     await addSmallSources(page);
     await page.waitForTimeout(700);
@@ -173,7 +189,6 @@ test.describe('OneDrive folder (SPEC-033)', () => {
   test('AC-5 a change made on disk is noticed at the next save; Load their version keeps a copy of mine', async ({
     page,
   }) => {
-    await setUpFolder(page);
     await customerAndObject(page);
     await page.waitForTimeout(700);
     const obj = JSON.parse(await readDisk(page, 'Acme Oy/Profit Center/object.json'));
@@ -196,7 +211,6 @@ test.describe('OneDrive folder (SPEC-033)', () => {
   });
 
   test('AC-5 Keep mine and overwrite saves my version', async ({ page }) => {
-    await setUpFolder(page);
     await customerAndObject(page);
     await page.waitForTimeout(700);
     const obj = JSON.parse(await readDisk(page, 'Acme Oy/Profit Center/object.json'));
@@ -221,40 +235,144 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     page,
   }) => {
     await setUpFolder(page);
-    await page.getByLabel('Customer name').fill('Acme Oy');
-    await page.getByRole('button', { name: 'Create customer' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
     await page.evaluate(() => localStorage.setItem('test:prompt', '1'));
     await page.reload();
     await expect(page.getByTestId('reconnect')).toContainText(DISK);
     await page.getByRole('button', { name: 'Reconnect folder' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
+    await expect(page.getByTestId('customer-Acme Oy')).toBeVisible();
     await expect(page.getByTestId('reconnect')).toHaveCount(0);
   });
 
-  test('AC-7 switching to browser storage and back keeps each place separate', async ({ page }) => {
-    await setUpFolder(page);
-    await page.getByLabel('Customer name').fill('Folder Customer');
-    await page.getByRole('button', { name: 'Create customer' }).click();
+  test('AC-7 the storage chip switches to browser storage and back; customers left in the browser can be moved into the folder', async ({
+    page,
+  }) => {
+    await setUpFolder(page, 'Folder Customer');
+    await page.getByTestId('storage-label').click();
     await page.getByRole('button', { name: 'Use browser storage' }).click();
-    await expect(page.getByTestId('storage-label')).toContainText('this browser');
+    await expect(page.getByTestId('storage-label')).toContainText('This browser');
     await expect(page.getByText('Create your first customer')).toBeVisible();
+    await createFirstCustomer(page, 'Browser Customer');
+    await page.getByTestId('storage-label').click();
     await page.getByRole('button', { name: 'Choose OneDrive folder' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Folder Customer');
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+    await expect(page.getByTestId('customer-Folder Customer')).toBeVisible();
+    await expect(page.getByTestId('customer-Browser Customer')).toHaveCount(0);
+    // the customer left in the browser is not lost: the page offers to move it
+    const banner = page.getByTestId('browser-customers-banner');
+    await expect(banner).toContainText('1 customer is still kept in this browser');
+    await banner.getByRole('button', { name: 'Move it to the folder' }).click();
+    await expect(page.getByTestId('customer-Browser Customer')).toBeVisible();
+    await expect(banner).toHaveCount(0);
+    expect(await disk(page)).toContain('Browser Customer/customer.json');
+  });
+
+  test('changing an existing browser workspace to an empty folder does not strand its customers on the create page', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await createFirstCustomer(page, 'Acme Oy');
+    await addObject(page, 'Profit Center');
+    await page.getByTestId('storage-label').click();
+    await page.getByRole('button', { name: 'Choose OneDrive folder' }).click();
+    // the empty folder shows the first-run page, with a clear way to bring the customer over
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+    await page
+      .getByTestId('browser-customers-banner')
+      .getByRole('button', { name: 'Move it to the folder' })
+      .click();
+    await expect(page.getByTestId('customer-Acme Oy')).toBeVisible();
+    await page.getByTestId('customer-Acme Oy').click();
+    await expect(page.getByTestId('object-Profit Center')).toBeVisible();
+    expect(await disk(page)).toContain('Acme Oy/Profit Center/project.mms.json');
+  });
+
+  test('choosing a customer folder instead of the workspace says so and writes nothing', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await writeDisk(
+      page,
+      'customer.json',
+      '{"id":"x","name":"Acme","createdAt":"2026-10-22T10:00:00.000Z"}',
+    );
+    await page.getByLabel('Customer name').fill('Whatever');
+    await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
+    await expect(page.getByTestId('home-message')).toContainText('This is a customer folder');
+    expect(await disk(page)).toEqual(['customer.json']);
+  });
+
+  test('an existing customer kept in this browser can be moved to the OneDrive folder, with its files', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await createFirstCustomer(page, 'Acme Oy');
+    await addObject(page, 'Profit Center');
+    await openObjectFromRow(page, 'Profit Center');
+    await addSmallSources(page);
+    await page.waitForTimeout(700); // autosave
+    await page.getByTestId('back-to-customer').click();
+    await expect(page.getByTestId('storage-label')).toContainText('This browser');
+
+    await page.getByRole('button', { name: 'Move to OneDrive folder' }).click();
+    await expect(page.getByRole('dialog', { name: 'Move to OneDrive folder' })).toContainText(
+      'Nothing is deleted',
+    );
+    await page.getByRole('button', { name: 'Choose folder and move' }).click();
+
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+    await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
+    await expect(page.getByTestId('object-Profit Center')).toBeVisible();
+    // the customer, its project and its source files are in the folder
+    const files = await disk(page);
+    expect(files).toContain('mms-workspace.json');
+    expect(files).toContain('Acme Oy/customer.json');
+    expect(files).toContain('Acme Oy/Profit Center/project.mms.json');
+    expect(files).toContain('Acme Oy/Profit Center/sources/CEPC.csv');
+    // the browser copy was archived, not deleted
+    await page.getByTestId('storage-label').click();
+    await page.getByRole('button', { name: 'Use browser storage' }).click();
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+    const browserFiles = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const out: string[] = [];
+      async function walk(dir: FileSystemDirectoryHandle, prefix: string, depth: number) {
+        for await (const [n, h] of (
+          dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }
+        ).entries()) {
+          if (h.kind === 'directory') {
+            if (depth < 4) await walk(h as FileSystemDirectoryHandle, `${prefix}${n}/`, depth + 1);
+          } else out.push(`${prefix}${n}`);
+        }
+      }
+      await walk(root, '', 0);
+      return out;
+    });
+    expect(
+      browserFiles.some((f) => /^_archive\/Acme Oy-.*\/Profit Center\/sources\/CEPC\.csv$/.test(f)),
+    ).toBe(true);
+    expect(browserFiles).not.toContain('Acme Oy/customer.json');
+  });
+
+  test('a folder customer cannot be moved again (the button is only for browser storage)', async ({
+    page,
+  }) => {
+    await setUpFolder(page);
+    await expect(page.getByRole('button', { name: 'Move to OneDrive folder' })).toHaveCount(0);
   });
 
   test('a project in a folder works the same as in browser storage: work survives Back and Open', async ({
     page,
   }) => {
-    await setUpFolder(page);
     await customerAndObject(page);
     await addSmallSources(page);
     await loadSmallTarget(page);
     await page.getByTestId('back-to-customer').click();
-    await expect(page.getByTestId('object-summary-Profit Center')).toContainText(
-      '0 of 6 fields mapped',
-    );
-    await page.getByTestId('object-Profit Center').getByRole('button', { name: 'Open' }).click();
+    await expect(page.getByTestId('object-summary-Profit Center')).toHaveText('0 of 6');
+    await openObjectFromRow(page, 'Profit Center');
     await expect(page.getByTestId('stage-target-summary')).toHaveText('2 structures, 6 fields');
     await goToStage(page, 'sources');
     await expect(page.getByTestId('dataset-CEPC')).toContainText(/\d+ rows/);

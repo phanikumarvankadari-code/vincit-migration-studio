@@ -109,6 +109,7 @@ export function StudioProvider({
   initial,
   persist,
   registerFlush,
+  initialStage,
 }: {
   children: ReactNode;
   /** The project to start from, when it comes from a workspace. */
@@ -116,10 +117,11 @@ export function StudioProvider({
   persist?: Persist;
   /** Lets the screen above save a pending change before it leaves the project. */
   registerFlush?: (flush: (() => Promise<void>) | undefined) => void;
+  initialStage?: Stage | undefined;
 }) {
   const [boot] = useState(() => initialState(initial));
   const [state, dispatch] = useReducer(reduce, boot.state);
-  const [stage, setStage] = useState<Stage>('sources');
+  const [stage, setStage] = useState<Stage>(initialStage ?? 'sources');
   const [startup, setStartup] = useState<Stored>(boot.startup);
   const [lastOutput, setLastOutput] = useState<LocalRunResult | undefined>();
   const [saveStatus, setSaveStatus] = useState<StudioApi['saveStatus']>({ state: 'idle' });

@@ -22,6 +22,7 @@ Each milestone ends with a demo check: something you can run or see.
 | M12 ✅ | Customer workspace | 032 | Main page is a customer; each business object is an entry with its own project, saved as files in a workspace folder. |
 | M13 ✅ | OneDrive folder | 033 | Workspace folder picked from the synced OneDrive folder; sources copied in and re-attached on open; conflict dialog. |
 | M14 ✅ | Outputs to the folder | 034 | Full run saved to `output/<run>/` in the object folder, plus zip download. |
+| M15 ✅ | Vincit Migration Studio UI | 035 | Corporate light UI with the Vincit logo: first run, All customers, customer home, object detail; move an existing customer to a OneDrive folder. |
 
 ## Decisions already made
 

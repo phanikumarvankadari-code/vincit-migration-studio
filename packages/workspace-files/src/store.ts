@@ -54,12 +54,26 @@ const readObject = (port: FilePort, c: string, o: string) =>
 
 const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 
-export type RootKind = 'empty' | 'workspace' | 'other';
+export type RootKind = 'empty' | 'workspace' | 'customer' | 'object' | 'other';
 
 /** What a chosen folder is: empty, already a workspace, or something else that must not be written into. */
+/** What to tell the user when the chosen folder is a customer or object folder instead of the workspace. */
+export function wrongFolderMessage(kind: 'customer' | 'object'): string {
+  return kind === 'customer'
+    ? 'This is a customer folder, not the workspace. Choose the folder that contains it (the workspace folder with mms-workspace.json).'
+    : 'This is a business object folder, not the workspace. Choose the workspace folder that holds the customer folders.';
+}
+
 export async function inspectRoot(port: FilePort): Promise<RootKind> {
   const text = await port.readText([ROOT_MANIFEST]);
-  if (text === undefined) return (await port.list([])).length === 0 ? 'empty' : 'other';
+  if (text === undefined) {
+    const entries = await port.list([]);
+    if (entries.length === 0) return 'empty';
+    // A customer or business-object folder chosen by mistake, instead of the workspace that holds it.
+    if (entries.some((e) => e.kind === 'file' && e.name === OBJECT_FILE)) return 'object';
+    if (entries.some((e) => e.kind === 'file' && e.name === CUSTOMER_FILE)) return 'customer';
+    return 'other';
+  }
   try {
     return RootManifestSchema.safeParse(JSON.parse(text)).success ? 'workspace' : 'other';
   } catch {
@@ -71,6 +85,7 @@ export async function inspectRoot(port: FilePort): Promise<RootKind> {
 export async function openWorkspace(ctx: StoreContext): Promise<Outcome<{ created: boolean }>> {
   const kind = await inspectRoot(ctx.port);
   if (kind === 'workspace') return { ok: true, value: { created: false } };
+  if (kind === 'customer' || kind === 'object') return fail(wrongFolderMessage(kind));
   if (kind === 'other')
     return fail(
       'This folder already has other files in it and is not a Migration Mapping Studio workspace.',
@@ -220,7 +235,7 @@ async function copyTree(
   }
 }
 
-async function countFiles(port: FilePort, path: readonly string[]): Promise<number> {
+export async function countFiles(port: FilePort, path: readonly string[]): Promise<number> {
   let n = 0;
   for (const e of await port.list(path))
     n += e.kind === 'dir' ? await countFiles(port, [...path, e.name]) : 1;
@@ -297,4 +312,29 @@ export async function saveRunOutput(
     await ctx.port.writeBytes([customerFolder, objectFolder, OUTPUT_DIR, folder, name], f.bytes);
   }
   return { ok: true, value: { folder, files: files.length } };
+}
+
+/**
+ * Copies a folder with everything in it from one storage place to another (for example from browser storage
+ * to a OneDrive folder). Returns the number of files copied. Nothing is removed from the source.
+ */
+export async function copyBetweenPorts(
+  from: FilePort,
+  fromPath: readonly string[],
+  to: FilePort,
+  toPath: readonly string[],
+): Promise<number> {
+  let n = 0;
+  for (const e of await from.list(fromPath)) {
+    if (e.kind === 'dir')
+      n += await copyBetweenPorts(from, [...fromPath, e.name], to, [...toPath, e.name]);
+    else {
+      const bytes = await from.readBytes([...fromPath, e.name]);
+      if (bytes) {
+        await to.writeBytes([...toPath, e.name], bytes);
+        n++;
+      }
+    }
+  }
+  return n;
 }
