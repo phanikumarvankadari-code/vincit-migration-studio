@@ -93,8 +93,42 @@ function httpProblem(s: AiSettings, status: number): AiError {
   return new AiError(`The AI service answered with an error (${status}).`);
 }
 
-/** The names of the models the provider offers. */
-export async function listModels(s: AiSettings, signal?: AbortSignal): Promise<string[]> {
+/** A model the provider offers, with what is needed to tell a chat model from an embedding or a cloud one. */
+export interface ModelInfo {
+  name: string;
+  /** Billions of parameters, when known. */
+  sizeB?: number;
+  /** Runs on Ollama's servers, not on this computer. */
+  cloud: boolean;
+  /** Turns text into vectors; it cannot answer questions. */
+  embedding: boolean;
+}
+
+const EMBEDDING = /(embed|bge|minilm|nomic|e5-|gte-|arctic-embed)/i;
+const sizeOf = (text: unknown): number | undefined => {
+  const m = /^([\d.]+)\s*([BMK])/i.exec(String(text ?? ''));
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return m[2]!.toUpperCase() === 'B' ? n : m[2]!.toUpperCase() === 'M' ? n / 1000 : n / 1_000_000;
+};
+
+/**
+ * The model to use when nobody chose one: a chat model that runs on this computer. Embedding models and cloud
+ * models (which would send the metadata to Ollama's servers) are never picked. General models come before coder
+ * models, then the size closest to 8 billion parameters (good answers without a long wait).
+ */
+export function pickChatModel(models: readonly ModelInfo[]): ModelInfo | undefined {
+  return models
+    .filter((m) => !m.embedding && !m.cloud)
+    .sort((a, b) => {
+      const coder = Number(/coder/i.test(a.name)) - Number(/coder/i.test(b.name));
+      if (coder !== 0) return coder;
+      return Math.abs((a.sizeB ?? 8) - 8) - Math.abs((b.sizeB ?? 8) - 8);
+    })[0];
+}
+
+/** The models the provider offers. */
+export async function listModels(s: AiSettings, signal?: AbortSignal): Promise<ModelInfo[]> {
   if (s.provider === 'anthropic' && s.apiKey === '') throw new AiError('Enter the API key first.');
   let res: Response;
   try {
@@ -110,11 +144,49 @@ export async function listModels(s: AiSettings, signal?: AbortSignal): Promise<s
   }
   if (!res.ok) throw httpProblem(s, res.status);
   if (s.provider === 'ollama') {
-    const data = (await res.json()) as { models?: { name?: unknown }[] };
-    return (data.models ?? []).map((m) => String(m.name)).filter((n) => n !== 'undefined');
+    const data = (await res.json()) as {
+      models?: {
+        name?: unknown;
+        remote_host?: unknown;
+        details?: { family?: unknown; parameter_size?: unknown };
+      }[];
+    };
+    return (data.models ?? [])
+      .filter((m) => typeof m.name === 'string')
+      .map((m) => {
+        const name = String(m.name);
+        const size = sizeOf(m.details?.parameter_size);
+        return {
+          name,
+          ...(size !== undefined ? { sizeB: size } : {}),
+          cloud: /[-:]cloud$/i.test(name) || m.remote_host !== undefined,
+          embedding: EMBEDDING.test(name) || /bert/i.test(String(m.details?.family ?? '')),
+        };
+      });
   }
   const data = (await res.json()) as { data?: { id?: unknown }[] };
-  return (data.data ?? []).map((m) => String(m.id)).filter((n) => n !== 'undefined');
+  return (data.data ?? [])
+    .filter((m) => typeof m.id === 'string')
+    .map((m) => ({ name: String(m.id), cloud: false, embedding: false }));
+}
+
+/**
+ * Makes the settings usable without a visit to the dialog: with Ollama and no model chosen, finds the server's
+ * models and picks a local chat model. Throws a plain message when there is nothing to pick.
+ */
+export async function autoConfigure(s: AiSettings, signal?: AbortSignal): Promise<AiSettings> {
+  if (s.provider !== 'ollama' || s.model) return s;
+  const models = await listModels(s, signal);
+  const picked = pickChatModel(models);
+  if (!picked)
+    throw new AiError(
+      models.length === 0
+        ? 'Ollama has no model installed. Run: ollama pull gemma3'
+        : 'Ollama has no chat model that runs on this computer (only embedding or cloud models). Run: ollama pull gemma3',
+    );
+  const next = { ...s, model: picked.name };
+  saveAiSettings(next);
+  return next;
 }
 
 /** Asks the model one question and returns its text answer. */
@@ -138,6 +210,7 @@ export async function askAi(
               model: s.model,
               stream: false,
               format: 'json',
+              think: false,
               options: { temperature: 0, num_ctx: 8192 },
               messages: [
                 { role: 'system', content: prompt.system },

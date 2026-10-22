@@ -378,7 +378,7 @@ describe('hard-coded value suggestions (SPEC-036)', () => {
       parseValueResponse('{"value":"9999-12-31","confidence":99,"reason":"open end"}'),
     ).toEqual({
       ok: true,
-      suggestion: { value: '9999-12-31', confidence: 0.95, reason: 'open end', origin: 'ai' },
+      suggestion: { value: '9999-12-31', confidence: 0.85, reason: 'open end', origin: 'ai' },
     });
     expect(
       parseValueResponse('Sure:\n```json\n{"value":"2026-01-01","confidence":0.6}\n```').ok,

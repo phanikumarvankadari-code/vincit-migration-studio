@@ -13,7 +13,14 @@ import {
   Text,
 } from '@fluentui/react-components';
 import { useState } from 'react';
-import { listModels, saveAiSettings, type AiProvider, type AiSettings } from '../lib/ai-client';
+import {
+  listModels,
+  pickChatModel,
+  saveAiSettings,
+  type AiProvider,
+  type AiSettings,
+  type ModelInfo,
+} from '../lib/ai-client';
 
 const SUGGESTED_ANTHROPIC = ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'];
 
@@ -33,7 +40,9 @@ export function AiSettingsDialog({
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
-  const [models, setModels] = useState<string[]>(settings.model ? [settings.model] : []);
+  const [models, setModels] = useState<ModelInfo[]>(
+    settings.model ? [{ name: settings.model, cloud: false, embedding: false }] : [],
+  );
   const [status, setStatus] = useState<{ ok: boolean; text: string } | undefined>();
   const [busy, setBusy] = useState(false);
 
@@ -43,15 +52,19 @@ export function AiSettingsDialog({
     setBusy(true);
     try {
       const found = await listModels(current());
-      const list = provider === 'anthropic' && found.length === 0 ? SUGGESTED_ANTHROPIC : found;
+      // Embedding models cannot answer questions, so they are not offered.
+      const list =
+        provider === 'anthropic' && found.length === 0
+          ? SUGGESTED_ANTHROPIC.map((name) => ({ name, cloud: false, embedding: false }))
+          : found.filter((m) => !m.embedding);
       setModels(list);
       if (list.length === 0) {
         setStatus({
           ok: false,
-          text: 'Connected, but no model is installed. Run: ollama pull llama3.1',
+          text: 'Connected, but no chat model is installed. Run: ollama pull gemma3',
         });
       } else {
-        if (!list.includes(model)) setModel(list[0]!);
+        if (!list.some((m) => m.name === model)) setModel((pickChatModel(list) ?? list[0]!).name);
         setStatus({
           ok: true,
           text: `Connected. ${list.length} ${list.length === 1 ? 'model' : 'models'} available.`,
@@ -92,7 +105,8 @@ export function AiSettingsDialog({
                   <>
                     Only field names, technical names, types, lengths, key and required flags and
                     descriptions are sent, to a model running on this computer.{' '}
-                    <b>No row values are sent.</b>
+                    <b>No row values are sent.</b> A model whose name ends in -cloud runs on
+                    Ollama’s servers instead, so it is never picked automatically.
                   </>
                 ) : (
                   <>
@@ -131,8 +145,9 @@ export function AiSettingsDialog({
                       <option value="">Test the connection to list models</option>
                     )}
                     {models.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
+                      <option key={m.name} value={m.name}>
+                        {m.name}
+                        {m.cloud ? ' (cloud: runs on Ollama’s servers)' : ''}
                       </option>
                     ))}
                   </Select>
