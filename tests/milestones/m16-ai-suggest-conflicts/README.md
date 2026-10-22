@@ -20,3 +20,10 @@ Browser tests (`apps/mapping-studio/e2e/ai-suggestions.spec.ts`, the model mocke
 - mappings in place: line and target capsule coloured by confidence, the capsule opens the mapping to review;
 - hard-coded values: rule suggests 9999-12-31 for an end date; AI suggests a date from context; an invalid date cannot be used; Hard-code from the mapper and the table;
 - delete: table row, selected rows with confirmation, select all, mapper button and Delete key, each with Undo.
+
+## M16b — one-click Ollama (tested against a real Ollama)
+
+- With no settings, **AI suggest** finds Ollama, picks a local chat model (never an embedding model, never a `-cloud` model, general models before coder models, size closest to 8B), saves it and shows suggestions. The Stop button ends a slow run and the rule-based suggestions stay.
+- The settings list only chat models and mark cloud ones. Ollama is called with `think: false` (about 40% faster on reasoning models).
+- A fixed-value suggestion from the AI is capped at 85%.
+- `apps/mapping-studio/e2e/ai-real-ollama.spec.ts` runs against a real Ollama on the Profit Center files and only when asked: `MMS_REAL_OLLAMA=1 npm run e2e -- ai-real-ollama`. With `gemma4:latest` (8B) the full target takes about 50 seconds and returns suggestions from the model.

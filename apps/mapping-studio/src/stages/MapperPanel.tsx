@@ -22,7 +22,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { nowIso, useStudio } from '../context';
 import { BAND_STYLE, ConfidenceTag, ConflictTag, OriginTag } from '../components/confidence';
 import { AiSettingsDialog } from '../editor/AiSettingsDialog';
-import { AiError, aiReady, aiSuggest, loadAiSettings, type AiSettings } from '../lib/ai-client';
+import {
+  AiError,
+  aiReady,
+  aiSuggest,
+  autoConfigure,
+  loadAiSettings,
+  type AiSettings,
+} from '../lib/ai-client';
 import { StatusPill } from './MappingTable';
 
 const useStyles = makeStyles({
@@ -499,30 +506,53 @@ export function MapperPanel({
           : `${found.length} suggestion${found.length === 1 ? '' : 's'}. Nothing is mapped until you accept it.`,
     });
   };
+  const abortRef = useRef<AbortController | undefined>(undefined);
   const askAi = async () => {
     if (!structure) return;
-    if (!aiReady(aiSettings)) {
-      setShowAi(true);
-      return;
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    let settings = aiSettings;
+    // One click is enough: with Ollama and no model chosen yet, the settings are found and saved here.
+    if (!aiReady(settings)) {
+      if (settings.provider === 'anthropic') {
+        setShowAi(true);
+        return;
+      }
+      setAiBusy('Looking for an Ollama model…');
+      try {
+        settings = await autoConfigure(settings, ctl.signal);
+        setAiSettings(settings);
+      } catch (e) {
+        setAiBusy(undefined);
+        setMessage({
+          intent: 'error',
+          text: `${e instanceof AiError ? e.message : 'The AI settings could not be found.'} Check the address or choose a model in AI settings.`,
+        });
+        setShowAi(true);
+        return;
+      }
     }
     const rules = suggestMappings(project, { structureId: structure.id, data: state.data });
     // The rule-based suggestions show at once; the model's answers are merged in when they arrive.
     setSuggestions(rules);
-    setAiBusy('Asking the model…');
+    setAiBusy(`Asking ${settings.model}…`);
     try {
       const r = await aiSuggest({
         project,
         structureId: structure.id,
         rules,
-        settings: aiSettings,
+        settings,
+        signal: ctl.signal,
         onProgress: (done, total) =>
-          setAiBusy(done < total ? `Asking the model… batch ${done + 1} of ${total}` : undefined),
+          setAiBusy(
+            done < total ? `Asking ${settings.model}… batch ${done + 1} of ${total}` : undefined,
+          ),
       });
       setSuggestions(r.suggestions);
       const n = r.suggestions.filter((x) => x.origin !== 'rules').length;
       setMessage({
         intent: 'info',
-        text: `${r.suggestions.length} suggestion${r.suggestions.length === 1 ? '' : 's'} (${n} with AI). Nothing is mapped until you accept it.${r.problems.length ? ` ${r.problems.length} answer${r.problems.length === 1 ? '' : 's'} could not be used.` : ''}`,
+        text: `${r.suggestions.length} suggestion${r.suggestions.length === 1 ? '' : 's'} (${n} with AI, ${settings.model}). Nothing is mapped until you accept it.${r.problems.length ? ` ${r.problems.length} answer${r.problems.length === 1 ? '' : 's'} could not be used.` : ''}`,
       });
     } catch (e) {
       setMessage({
@@ -531,6 +561,7 @@ export function MapperPanel({
       });
     } finally {
       setAiBusy(undefined);
+      abortRef.current = undefined;
     }
   };
 
@@ -581,9 +612,14 @@ export function MapperPanel({
           AI settings
         </Button>
         {aiBusy && (
-          <Text className={s.muted} data-testid="ai-busy">
-            {aiBusy}
-          </Text>
+          <>
+            <Text className={s.muted} data-testid="ai-busy">
+              {aiBusy}
+            </Text>
+            <Button size="small" onClick={() => abortRef.current?.abort()} data-testid="ai-stop">
+              Stop
+            </Button>
+          </>
         )}
         <Text className={s.muted}>
           Drag a source field onto a target field, or click one and then the other. Click a target

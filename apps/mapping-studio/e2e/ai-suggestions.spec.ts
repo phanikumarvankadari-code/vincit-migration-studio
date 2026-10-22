@@ -38,6 +38,18 @@ const CORS = {
   'access-control-allow-methods': 'GET,POST,OPTIONS',
 };
 
+/** What an Ollama on a real machine lists: an embedding model, local chat models and a cloud model. */
+const INSTALLED = [
+  { name: 'bge-m3:latest', details: { family: 'bert', parameter_size: '566.70M' } },
+  { name: 'gemma4:latest', details: { family: 'gemma4', parameter_size: '8.0B' } },
+  {
+    name: 'qwen3-coder:480b-cloud',
+    remote_host: 'https://ollama.com:443',
+    details: { family: 'qwen3moe', parameter_size: '480B' },
+  },
+  { name: 'qwen3-coder:latest', details: { family: 'qwen3moe', parameter_size: '30.5B' } },
+];
+
 type Pick = { source: string | null; confidence: number; reason?: string };
 
 /** Builds the model's answer from the short ids in the prompt: target name to "Dataset.Field" (or null). */
@@ -69,9 +81,12 @@ async function mockOllama(
   options: {
     picks?: Record<string, Pick>;
     value?: { value: string; confidence: number; reason: string };
+    /** Wait this long before answering a question. */
+    delayMs?: number;
+    models?: object[];
   } = {},
-): Promise<{ sent: { system: string; user: string }[] }> {
-  const sent: { system: string; user: string }[] = [];
+): Promise<{ sent: { system: string; user: string; model: string; think: unknown }[] }> {
+  const sent: { system: string; user: string; model: string; think: unknown }[] = [];
   await page.route('http://127.0.0.1:11434/**', async (route) => {
     const req = route.request();
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
@@ -80,11 +95,16 @@ async function mockOllama(
         status: 200,
         headers: CORS,
         contentType: 'application/json',
-        body: JSON.stringify({ models: [{ name: 'llama3.1:8b' }] }),
+        body: JSON.stringify({ models: options.models ?? INSTALLED }),
       });
-    const body = req.postDataJSON() as { messages: { role: string; content: string }[] };
+    const body = req.postDataJSON() as {
+      model: string;
+      think?: unknown;
+      messages: { role: string; content: string }[];
+    };
     const [system, user] = body.messages.map((m) => m.content) as [string, string];
-    sent.push({ system, user });
+    sent.push({ system, user, model: body.model, think: body.think });
+    if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
     const answer = system.includes('ONE fixed value')
       ? (options.value ?? { value: '', confidence: 0, reason: '' })
       : mappingAnswer(JSON.parse(user), options.picks ?? {});
@@ -238,21 +258,89 @@ test.describe('AI suggestions, confidence and conflicts (SPEC-036)', () => {
     await expect(page.getByTestId('graph-message')).toHaveText('1 mapping created.');
   });
 
-  test('without settings, AI suggest opens the AI settings, and a model can be chosen after testing the connection', async ({
+  test('one click is enough: with no settings the app finds Ollama, picks a local chat model, saves it and shows suggestions', async ({
+    page,
+  }) => {
+    const mock = await mockOllama(page, { picks: PICKS });
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    await page.getByTestId('ai-suggest').click();
+    await expect(page.getByTestId(`confidence-${T(1)}`)).toHaveText('95% High');
+    // not the embedding model, not the cloud model, not the coder model
+    await expect(page.getByTestId('graph-message')).toContainText('gemma4:latest');
+    expect(mock.sent[0]!.model).toBe('gemma4:latest');
+    expect(mock.sent[0]!.think).toBe(false);
+    await expect(page.getByRole('dialog', { name: 'AI settings' })).toHaveCount(0);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('mms:ai') ?? '{}'));
+    expect(stored).toMatchObject({ provider: 'ollama', model: 'gemma4:latest' });
+    // the next click goes straight to the model
+    await page.getByTestId('ai-suggest').click();
+    await expect(page.getByTestId('graph-message')).toContainText('gemma4:latest');
+    expect(mock.sent).toHaveLength(2);
+  });
+
+  test('the settings list only chat models and mark cloud ones; Test connection picks a sensible default', async ({
     page,
   }) => {
     await mockOllama(page, { picks: PICKS });
     await setUpSmallMapping(page);
     await openVisual(page);
-    await page.getByTestId('ai-suggest').click();
+    await page.getByRole('button', { name: 'AI settings' }).click();
     const dialog = page.getByRole('dialog', { name: 'AI settings' });
-    await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId('ai-privacy')).toContainText('No row values are sent');
+    await expect(dialog.getByTestId('ai-privacy')).toContainText('-cloud');
     await dialog.getByRole('button', { name: 'Test connection' }).click();
-    await expect(dialog.getByTestId('ai-status')).toContainText('Connected. 1 model available.');
+    await expect(dialog.getByTestId('ai-status')).toContainText('Connected. 3 models available.');
+    const options = await dialog.getByLabel('Model').locator('option').allTextContents();
+    expect(options).toEqual([
+      'gemma4:latest',
+      'qwen3-coder:480b-cloud (cloud: runs on Ollama’s servers)',
+      'qwen3-coder:latest',
+    ]);
+    await expect(dialog.getByLabel('Model')).toHaveValue('gemma4:latest');
     await dialog.getByRole('button', { name: 'Save' }).click();
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('mms:ai') ?? '{}'));
+    expect(stored.model).toBe('gemma4:latest');
+  });
+
+  test('with no settings and Ollama not running, the click says what to do and opens the AI settings', async ({
+    page,
+  }) => {
+    await page.route('http://127.0.0.1:11434/**', (route) => route.abort());
+    await setUpSmallMapping(page);
+    await openVisual(page);
     await page.getByTestId('ai-suggest').click();
-    await expect(page.getByTestId(`confidence-${T(1)}`)).toHaveText('95% High');
+    await expect(page.getByTestId('graph-message')).toContainText('Cannot reach Ollama');
+    await expect(page.getByTestId('graph-message')).toContainText('ollama serve');
+    await expect(page.getByRole('dialog', { name: 'AI settings' })).toBeVisible();
+  });
+
+  test('with only an embedding model installed, the click says there is no chat model', async ({
+    page,
+  }) => {
+    await mockOllama(page, { models: [INSTALLED[0]!, INSTALLED[2]!] });
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    await page.getByTestId('ai-suggest').click();
+    await expect(page.getByTestId('graph-message')).toContainText(
+      'no chat model that runs on this computer',
+    );
+    await expect(page.getByRole('dialog', { name: 'AI settings' })).toBeVisible();
+  });
+
+  test('a slow model can be stopped; the rule-based suggestions stay', async ({ page }) => {
+    await seedAi(page, OLLAMA_SETTINGS);
+    await mockOllama(page, { picks: PICKS, delayMs: 20_000 });
+    await setUpSmallMapping(page);
+    await openVisual(page);
+    await page.getByTestId('ai-suggest').click();
+    await expect(page.getByTestId('ai-busy')).toContainText('Asking llama3.1:8b');
+    await expect(page.getByTestId('ai-suggest')).toBeDisabled();
+    await page.getByTestId('ai-stop').click();
+    await expect(page.getByTestId('graph-message')).toContainText('Stopped.');
+    await expect(page.getByTestId('ai-busy')).toHaveCount(0);
+    await expect(page.getByTestId(`suggestion-${T(1)}`)).toContainText('Rules');
+    await expect(page.getByTestId('ai-suggest')).toBeEnabled();
   });
 
   test('an API key (Anthropic) can be used instead: it is sent as a header, kept in this browser and never with row values', async ({
@@ -450,7 +538,10 @@ test.describe('Hard-coded values (SPEC-036)', () => {
     await expect(ai.getByRole('button', { name: 'Use this value' })).toBeDisabled();
   });
 
-  test('without AI settings, Ask AI for a value opens the settings', async ({ page }) => {
+  test('with no AI settings and Ollama not running, Ask AI for a value says so and opens the settings', async ({
+    page,
+  }) => {
+    await page.route('http://127.0.0.1:11434/**', (route) => route.abort());
     await setUp(page);
     await page.getByRole('tab', { name: 'Mapping Table' }).click();
     await openEditor(page, 'Profit Center', 'Valid From');

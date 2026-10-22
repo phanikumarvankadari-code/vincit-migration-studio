@@ -130,7 +130,8 @@ export function parseValueResponse(
     ok: true,
     suggestion: {
       value,
-      confidence: Math.max(0, Math.min(0.95, Math.round(conf * 100) / 100)),
+      // A fixed value is a guess about the future, so the AI is never more than 85% sure.
+      confidence: Math.max(0, Math.min(0.85, Math.round(conf * 100) / 100)),
       reason: typeof r.reason === 'string' ? r.reason.trim().slice(0, 200) : '',
       origin: 'ai',
     },

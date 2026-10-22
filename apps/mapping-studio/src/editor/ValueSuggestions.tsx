@@ -7,6 +7,7 @@ import {
   AiError,
   aiReady,
   aiSuggestValue,
+  autoConfigure,
   loadAiSettings,
   ruleValueFor,
   type AiSettings,
@@ -36,24 +37,30 @@ export function ValueSuggestions({
   const [showSettings, setShowSettings] = useState(false);
 
   const ask = async () => {
-    if (!aiReady(settings)) {
-      setShowSettings(true);
-      return;
-    }
     setBusy(true);
     setError(undefined);
+    let use = settings;
     try {
+      if (!aiReady(use)) {
+        if (use.provider === 'anthropic') {
+          setShowSettings(true);
+          return;
+        }
+        use = await autoConfigure(use);
+        setSettings(use);
+      }
       setAi(
         await aiSuggestValue({
           project: state.project,
           structureId,
           fieldId,
-          settings,
+          settings: use,
           today: new Date().toISOString().slice(0, 10),
         }),
       );
     } catch (e) {
       setError(e instanceof AiError ? e.message : 'The AI suggestion failed.');
+      if (!aiReady(use)) setShowSettings(true);
     } finally {
       setBusy(false);
     }
