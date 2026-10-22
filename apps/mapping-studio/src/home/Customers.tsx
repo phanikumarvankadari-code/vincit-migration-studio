@@ -1,8 +1,15 @@
-import { Button } from '@fluentui/react-components';
+import { Button, MessageBar, MessageBarBody } from '@fluentui/react-components';
 import { useState } from 'react';
 import { Bar, StatusTag, Tag, formatWhen, pctOf } from '../components/brand';
 import { useWorkspace, type ObjectCard, type PortfolioCustomer } from '../workspace';
-import { BrowserCustomersBanner, Page, TopBar, attentionOf, storageText } from './shared';
+import {
+  BrowserCustomersBanner,
+  OpenWorkspaceButton,
+  Page,
+  TopBar,
+  attentionOf,
+  storageText,
+} from './shared';
 import { ObjectDetail } from './ObjectDetail';
 
 const TILES = [
@@ -50,6 +57,7 @@ function statsOf(p: PortfolioCustomer): Stats {
 export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
   const ws = useWorkspace();
   const [filter, setFilter] = useState<'all' | 'attention'>('all');
+  const [openMessage, setOpenMessage] = useState<string | undefined>();
   const [sort, setSort] = useState<'recent' | 'name' | 'least'>('recent');
   const [detail, setDetail] = useState<ObjectCard | undefined>();
   const q = ws.search.trim().toLowerCase();
@@ -88,6 +96,11 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
       <TopBar search />
       <main className="mms-main">
         <BrowserCustomersBanner />
+        {openMessage && (
+          <MessageBar intent="error" data-testid="open-workspace-message">
+            <MessageBarBody>{openMessage}</MessageBarBody>
+          </MessageBar>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 20 }}>
           <div style={{ flex: '1 1 420px', minWidth: 0 }}>
             <h1 className="mms-h1" data-testid="home-title">
@@ -98,6 +111,7 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
               {objects === 1 ? 'object' : 'objects'} · {runs} {runs === 1 ? 'run' : 'runs'} saved
             </p>
           </div>
+          <OpenWorkspaceButton onMessage={setOpenMessage} />
           <Button appearance="primary" onClick={() => onNewCustomer()}>
             New customer
           </Button>

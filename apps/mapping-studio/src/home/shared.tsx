@@ -79,6 +79,14 @@ export function StorageDialog({ open, onClose }: { open: boolean; onClose: () =>
                 Choose OneDrive folder
               </Button>
             )}
+            {ws.canChooseFolder && (
+              <Button
+                data-testid="storage-open-workspace"
+                onClick={() => void run(ws.openWorkspaceFolder())}
+              >
+                Open existing workspace
+              </Button>
+            )}
             {ws.connection.kind !== 'browser' && (
               <Button onClick={() => void run(ws.useBrowserStorage())}>Use browser storage</Button>
             )}
@@ -341,5 +349,29 @@ export function BrowserCustomersBanner() {
         Move {n === 1 ? 'it' : 'them'} to the folder
       </Button>
     </MessageBar>
+  );
+}
+
+/** Opens a workspace that already exists in a OneDrive folder: all its customers. */
+export function OpenWorkspaceButton({
+  appearance = 'secondary',
+  onMessage,
+}: {
+  appearance?: 'primary' | 'secondary' | 'outline';
+  onMessage?: (m: string | undefined) => void;
+}) {
+  const ws = useWorkspace();
+  if (!ws.canChooseFolder) return null;
+  return (
+    <Button
+      appearance={appearance}
+      data-testid="open-workspace-folder"
+      onClick={async () => {
+        const r = await ws.openWorkspaceFolder();
+        onMessage?.(r.ok ? undefined : r.message);
+      }}
+    >
+      Open workspace from OneDrive folder
+    </Button>
   );
 }
