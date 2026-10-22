@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { FileButton, StageBadge } from '../components/common';
 import { useStudio } from '../context';
 import { useOptionalWorkspace } from '../workspace';
+import { datasetsWithoutData } from '@mms/studio-model';
 import { deleteFromLibrary, listProjects } from '../lib/storage';
 import { MapStage } from '../stages/MapStage';
 import { ReadyStage } from '../stages/ReadyStage';
@@ -275,7 +276,34 @@ export function Shell() {
         </div>
       </header>
       <div>
-        {startup.kind === 'ok' && (
+        {startup.kind === 'ok' &&
+          inWorkspace &&
+          workspace?.rowsLoaded &&
+          datasetsWithoutData(state).length > 0 && (
+            <MessageBar intent="warning" data-testid="rows-missing-banner">
+              <MessageBarBody>
+                No rows for{' '}
+                {datasetsWithoutData(state)
+                  .map((d) => d.name)
+                  .join(', ')}
+                : their files are not in this project's sources folder. Add them in Sources before
+                you test or run.
+              </MessageBarBody>
+              <Button
+                size="small"
+                onClick={() => {
+                  setStage('sources');
+                  dismissStartup();
+                }}
+              >
+                Go to Sources
+              </Button>
+              <Button size="small" appearance="transparent" onClick={dismissStartup}>
+                Dismiss
+              </Button>
+            </MessageBar>
+          )}
+        {startup.kind === 'ok' && !inWorkspace && (
           <MessageBar intent="info" data-testid="restored-banner">
             <MessageBarBody>
               Project “{startup.workspace.project.name}” was restored. Source rows are not saved, so
@@ -357,6 +385,30 @@ export function Shell() {
           {stage === 'ready' && <ReadyStage />}
         </main>
       </div>
+      <Dialog open={workspace?.conflict !== undefined} modalType="alert">
+        <DialogSurface aria-label="Changed elsewhere">
+          <DialogBody>
+            <DialogTitle>Changed elsewhere</DialogTitle>
+            <DialogContent>
+              {workspace?.conflict?.message} Choose which version to keep.
+              {workspace?.conflict?.hasPending
+                ? ' If you load theirs, your unsaved version is kept next to it as a copy named project.conflict-….mms.json.'
+                : ''}
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="primary"
+                onClick={() => void workspace?.resolveConflict('theirs')}
+              >
+                Load their version
+              </Button>
+              <Button onClick={() => void workspace?.resolveConflict('mine')}>
+                Keep mine and overwrite
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
       <Dialog open={showProjects} onOpenChange={(_, d) => setShowProjects(d.open)}>
         <DialogSurface aria-label="Projects in this browser">
           <DialogBody>

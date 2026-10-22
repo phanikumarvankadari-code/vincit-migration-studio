@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ARCHIVE_DIR,
   archive,
+  inputPath,
+  inspectRoot,
+  listSourceFiles,
+  safeFileName,
   createCustomer,
   createObject,
   listCustomers,
@@ -173,5 +177,38 @@ describe('workspace store', () => {
     await port.writeText([c.folder, 'stray', 'a.txt'], 'x');
     expect((await listCustomers(port)).map((x) => x.folder)).toEqual(['Acme']);
     expect(await listObjects(port, c.folder)).toEqual([]);
+  });
+});
+
+describe('input files (SPEC-033)', () => {
+  it('keeps the extension and makes the name safe', () => {
+    expect(safeFileName('CEPC.csv')).toBe('CEPC.csv');
+    expect(safeFileName('con.csv')).toBe('con_.csv');
+    expect(safeFileName('C:\\data\\Profit/Center?.XLSX')).toBe('Center_.XLSX');
+    expect(safeFileName('..')).toBe('Untitled');
+    expect(inputPath('Acme', 'PC', 'sources', 'a:b.csv')).toEqual([
+      'Acme',
+      'PC',
+      'sources',
+      'a_b.csv',
+    ]);
+  });
+
+  it('lists only csv and xlsx files directly inside sources', async () => {
+    const { port } = setup();
+    for (const f of ['b.csv', 'a.XLSX', 'notes.txt', 'dictionary/field.csv'])
+      await port.writeText(['Acme', 'PC', 'sources', ...f.split('/')], 'x');
+    expect(await listSourceFiles(port, 'Acme', 'PC')).toEqual(['a.XLSX', 'b.csv']);
+    expect(await listSourceFiles(port, 'Acme', 'None')).toEqual([]);
+  });
+
+  it('tells an empty folder, a workspace and any other folder apart', async () => {
+    const a = setup();
+    expect(await inspectRoot(a.port)).toBe('empty');
+    await openWorkspace(a.ctx);
+    expect(await inspectRoot(a.port)).toBe('workspace');
+    const b = setup();
+    await b.port.writeText(['photos', 'x.jpg'], 'x');
+    expect(await inspectRoot(b.port)).toBe('other');
   });
 });
