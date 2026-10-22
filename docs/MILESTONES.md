@@ -23,6 +23,7 @@ Each milestone ends with a demo check: something you can run or see.
 | M13 ✅ | OneDrive folder | 033 | Workspace folder picked from the synced OneDrive folder; sources copied in and re-attached on open; conflict dialog. |
 | M14 ✅ | Outputs to the folder | 034 | Full run saved to `output/<run>/` in the object folder, plus zip download. |
 | M15 ✅ | Vincit Migration Studio UI | 035 | Corporate light UI with the Vincit logo: first run, All customers, customer home, object detail; move an existing customer to a OneDrive folder. |
+| M16 ✅ | AI suggestions and conflicts | 036 | Local-model (or API-key) suggestions with confidence and origin, conflicts in the mapper and table, confidence colours on lines and capsules, hard-coded values with date suggestions, delete with undo. |
 
 ## Decisions already made
 

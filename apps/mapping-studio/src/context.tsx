@@ -1,14 +1,19 @@
-import type { Diagnostic } from '@mms/mapping-core';
+import type { Diagnostic, Project } from '@mms/mapping-core';
 import type { LocalRunResult } from '@mms/local-run';
 import { profileDataset, type DatasetProfile } from '@mms/profiler';
 import { createBuiltInRegistry } from '@mms/routine-library';
 import {
+  applySuggestions,
   buildMappingRows,
+  conflictsByTarget,
   createStudioState,
+  detectConflicts,
   decodeWorkspace,
   encodeWorkspace,
   reduce,
+  removeMappings,
   stageStatuses,
+  type MappingConflict,
   type MappingRow,
   type Stage,
   type StageStatus,
@@ -16,6 +21,7 @@ import {
   type StudioState,
 } from '@mms/studio-model';
 import { preflight, runTest, type SampleConfig } from '@mms/test-engine';
+import type { MappingSuggestion } from '@mms/mapping-suggest';
 import type { RoutineRegistry } from '@mms/transformation-engine';
 import {
   createContext,
@@ -52,6 +58,24 @@ export interface StudioApi {
   rows: MappingRow[];
   statuses: Record<Stage, StageStatus>;
   profiles: ReadonlyMap<string, DatasetProfile>;
+  /** Suggestions (rules and AI) waiting for a decision. They live here so the mapper and the table share them. */
+  suggestions: MappingSuggestion[] | undefined;
+  setSuggestions: (
+    s:
+      | MappingSuggestion[]
+      | undefined
+      | ((cur: MappingSuggestion[] | undefined) => MappingSuggestion[] | undefined),
+  ) => void;
+  /** Accepts suggestions as direct mappings, in one edit. */
+  acceptSuggestions: (list: readonly MappingSuggestion[]) => { applied: number; skipped: number };
+  /** Things in the mappings worth a second look (type, length, reuse, empty source, disagreeing suggestions). */
+  conflicts: MappingConflict[];
+  conflictsByField: Map<string, MappingConflict[]>;
+  /** Removes mappings and keeps the project as it was, so Undo can bring them back. */
+  deleteMappings: (targets: readonly { structureId: string; fieldId: string }[]) => number;
+  lastDeleted: { count: number; fields: string } | undefined;
+  undoDelete: () => void;
+  dismissUndo: () => void;
   stage: Stage;
   setStage: (s: Stage) => void;
   runSample: (sample: SampleConfig) => void;
@@ -124,6 +148,10 @@ export function StudioProvider({
   const [stage, setStage] = useState<Stage>(initialStage ?? 'sources');
   const [startup, setStartup] = useState<Stored>(boot.startup);
   const [lastOutput, setLastOutput] = useState<LocalRunResult | undefined>();
+  const [suggestions, setSuggestions] = useState<MappingSuggestion[] | undefined>();
+  const [deleted, setDeleted] = useState<
+    { before: Project; count: number; fields: string } | undefined
+  >();
   const [saveStatus, setSaveStatus] = useState<StudioApi['saveStatus']>({ state: 'idle' });
   const registry = useMemo(
     () => createBuiltInRegistry({ randomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)) }),
@@ -166,6 +194,61 @@ export function StudioProvider({
     }
     return out;
   }, [state.project.sourceDefinitions, state.data]);
+
+  const conflicts = useMemo(() => {
+    const fill: Record<string, number> = {};
+    for (const p of profiles.values()) for (const f of p.fields) fill[f.fieldId] = f.fillPercentage;
+    return detectConflicts(state.project, {
+      fill,
+      ...(suggestions ? { suggestions } : {}),
+    });
+  }, [state.project, profiles, suggestions]);
+  const conflictsByField = useMemo(() => conflictsByTarget(conflicts), [conflicts]);
+
+  const acceptSuggestions = useCallback(
+    (list: readonly MappingSuggestion[]) => {
+      const r = applySuggestions(
+        state.project,
+        list.map((x) => ({
+          structureId: x.targetStructureId,
+          targetFieldId: x.targetFieldId,
+          sourceFieldId: x.sourceFieldId,
+        })),
+        nowIso(),
+      );
+      if (r.applied > 0) dispatch({ type: 'projectEdited', project: r.project });
+      return { applied: r.applied, skipped: r.skipped };
+    },
+    [state.project],
+  );
+
+  const deleteMappings = useCallback(
+    (targets: readonly { structureId: string; fieldId: string }[]) => {
+      const r = removeMappings(state.project, targets, nowIso());
+      if (r.removed === 0) return 0;
+      const names = targets
+        .map(
+          (t) =>
+            state.project.targetDefinition?.structures
+              .find((x) => x.id === t.structureId)
+              ?.fields.find((f) => f.id === t.fieldId)?.displayName,
+        )
+        .filter((n) => n !== undefined);
+      setDeleted({
+        before: state.project,
+        count: r.removed,
+        fields: names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : ''),
+      });
+      dispatch({ type: 'projectEdited', project: r.project });
+      return r.removed;
+    },
+    [state.project],
+  );
+  const undoDelete = useCallback(() => {
+    if (!deleted) return;
+    dispatch({ type: 'projectEdited', project: deleted.before });
+    setDeleted(undefined);
+  }, [deleted]);
 
   const runSample = useCallback(
     (sample: SampleConfig) => {
@@ -322,6 +405,15 @@ export function StudioProvider({
       rows,
       statuses,
       profiles,
+      suggestions,
+      setSuggestions,
+      acceptSuggestions,
+      conflicts,
+      conflictsByField,
+      deleteMappings,
+      lastDeleted: deleted ? { count: deleted.count, fields: deleted.fields } : undefined,
+      undoDelete,
+      dismissUndo: () => setDeleted(undefined),
       stage,
       setStage,
       runSample,
@@ -343,6 +435,13 @@ export function StudioProvider({
       rows,
       statuses,
       profiles,
+      suggestions,
+      acceptSuggestions,
+      conflicts,
+      conflictsByField,
+      deleteMappings,
+      deleted,
+      undoDelete,
       stage,
       runSample,
       lastOutput,

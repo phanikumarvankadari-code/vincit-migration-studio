@@ -14,6 +14,7 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
+import type { DataType } from '@mms/mapping-core';
 import {
   DRAFT_TYPES,
   draftToMapping,
@@ -40,19 +41,48 @@ const useStyles = makeStyles({
   },
 });
 
-export function MappingEditor({ row, onClose }: { row: MappingRow; onClose: () => void }) {
+export function MappingEditor({
+  row,
+  onClose,
+  preset,
+}: {
+  row: MappingRow;
+  onClose: () => void;
+  /** Start on this mapping type when the field has no mapping yet. */
+  preset?: 'constant';
+}) {
   // Remount for every field so the draft always starts from the saved mapping.
-  return <EditorBody key={row.key} row={row} onClose={onClose} />;
+  return (
+    <EditorBody key={`${row.key}/${preset ?? ''}`} row={row} onClose={onClose} preset={preset} />
+  );
 }
 
-function EditorBody({ row, onClose }: { row: MappingRow; onClose: () => void }) {
+function EditorBody({
+  row,
+  onClose,
+  preset,
+}: {
+  row: MappingRow;
+  onClose: () => void;
+  preset: 'constant' | undefined;
+}) {
   const s = useStyles();
   const { state, send, registry } = useStudio();
   const initial = useMemo<{ draft: MappingDraft | undefined; locked: boolean }>(() => {
-    if (!row.mapping) return { draft: emptyDraft('direct'), locked: false };
+    if (!row.mapping) {
+      if (preset === 'constant') {
+        const c = emptyDraft('constant', row.fieldId);
+        const t = row.datatype as DataType;
+        return {
+          draft: c.type === 'constant' ? { ...c, datatype: t === 'unknown' ? 'string' : t } : c,
+          locked: false,
+        };
+      }
+      return { draft: emptyDraft('direct'), locked: false };
+    }
     const d = mappingToDraft(state.project, row.mapping);
     return { draft: d, locked: d === undefined };
-  }, [row, state.project]);
+  }, [row, state.project, preset]);
   const [draft, setDraft] = useState<MappingDraft | undefined>(initial.draft);
   const [locked, setLocked] = useState(initial.locked);
   const [needsReview, setNeedsReview] = useState(row.mapping?.status === 'needsReview');
@@ -143,7 +173,17 @@ function EditorBody({ row, onClose }: { row: MappingRow; onClose: () => void }) 
           )}
 
           {draft?.type === 'direct' && <DirectForm draft={draft} onChange={setDraft} />}
-          {draft?.type === 'constant' && <ConstantForm draft={draft} onChange={setDraft} />}
+          {draft?.type === 'constant' && (
+            <ConstantForm
+              draft={draft}
+              onChange={setDraft}
+              target={{
+                structureId: row.structureId,
+                fieldId: row.fieldId,
+                datatype: row.datatype,
+              }}
+            />
+          )}
           {draft?.type === 'lookup' && <LookupForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'conditional' && <ConditionForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'routine' && <RoutineForm draft={draft} onChange={setDraft} />}

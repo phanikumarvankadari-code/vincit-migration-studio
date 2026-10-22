@@ -250,8 +250,8 @@ test.describe('Two-panel mapper (SPEC-031)', () => {
     expect(before).toBeGreaterThan(15);
     // key fields match on name, data type and key: strong. "Printer" only shares words with "Printer name": weaker.
     await expect(rows.filter({ hasText: 'Profit Center.Printer' })).toHaveCount(0);
-    await page.getByRole('button', { name: /Accept all at 70% or more/ }).click();
-    await expect(page.getByTestId('graph-message')).toContainText('mappings created');
+    await page.getByRole('button', { name: /Accept all High/ }).click();
+    await expect(page.getByTestId('graph-message')).toContainText(/mappings? created/);
     const after = await rows.count();
     expect(after).toBeGreaterThan(0); // the weaker ones are still waiting for a decision
     expect(after).toBeLessThan(before);

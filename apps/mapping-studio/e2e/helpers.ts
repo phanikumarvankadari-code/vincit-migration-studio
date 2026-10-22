@@ -89,6 +89,15 @@ export async function loadSmallTarget(page: Page): Promise<void> {
   await expect(page.getByTestId('structure-Profit Center')).toBeVisible();
 }
 
+/** A target typed in through the manual dialog, from the given definition text. */
+export async function loadTargetText(page: Page, text: string): Promise<void> {
+  await goToStage(page, 'target');
+  await page.getByRole('button', { name: 'Create target manually' }).click();
+  await page.getByLabel('Target definition').fill(text);
+  await page.getByRole('button', { name: 'Use this target' }).click();
+  await expect(page.getByTestId('structure-Profit Center')).toBeVisible();
+}
+
 /** Small sources and small target, then the Map stage. */
 export async function setUpSmallMapping(page: Page): Promise<void> {
   await openApp(page);

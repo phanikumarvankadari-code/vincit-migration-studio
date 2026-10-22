@@ -66,7 +66,7 @@ describe('M11 mapping suggestions on the Profit Center files', () => {
   it('M11-01 proposes the obvious sources with scores and reasons', () => {
     expect(pair('Profit Center.Profit Center')).toMatchObject({
       source: 'CEPC.Profit Center',
-      score: 0.8,
+      score: 0.85,
     });
     expect(pair('Profit Center.Profit Center')!.reasons).toContain('key on both sides');
     expect(pair('Profit Center.Valid From')).toMatchObject({ source: 'CEPC.Valid From' });
