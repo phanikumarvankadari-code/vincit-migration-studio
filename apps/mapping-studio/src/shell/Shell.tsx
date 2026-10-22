@@ -18,6 +18,7 @@ import { STAGES, STAGE_LABELS } from '@mms/studio-model';
 import { useState } from 'react';
 import { FileButton, StageBadge } from '../components/common';
 import { useStudio } from '../context';
+import { useOptionalWorkspace } from '../workspace';
 import { deleteFromLibrary, listProjects } from '../lib/storage';
 import { MapStage } from '../stages/MapStage';
 import { ReadyStage } from '../stages/ReadyStage';
@@ -115,6 +116,8 @@ export function Shell() {
   const [showProjects, setShowProjects] = useState(false);
   const [, setRemoved] = useState(0); // bumped to re-read the library after a delete
   const library = showProjects ? listProjects() : [];
+  const workspace = useOptionalWorkspace();
+  const inWorkspace = workspace?.open !== undefined;
   const [confirmNew, setConfirmNew] = useState(false);
   // "Fresh start" is a new project plus a reload, so every screen and setting starts clean.
   const [reloadAfter, setReloadAfter] = useState(false);
@@ -139,7 +142,22 @@ export function Shell() {
     <div className={s.app}>
       <header className={s.header}>
         <div className={s.headerTitle}>
-          <Text size={200}>Migration Mapping Studio</Text>
+          {inWorkspace && workspace?.open ? (
+            <Text size={200} data-testid="breadcrumb">
+              <Button
+                appearance="transparent"
+                size="small"
+                style={{ color: 'inherit', minWidth: 0, padding: 0 }}
+                data-testid="back-to-customer"
+                onClick={() => void workspace.closeObject()}
+              >
+                ‹ Back
+              </Button>{' '}
+              {workspace.open.customerName} › {workspace.open.object.name}
+            </Text>
+          ) : (
+            <Text size={200}>Migration Mapping Studio</Text>
+          )}
           {editing ? (
             <div className={s.editRow}>
               <Input aria-label="Project name" value={name} onChange={(_, d) => setName(d.value)} />
@@ -169,7 +187,7 @@ export function Shell() {
             </Text>
           )}
         </div>
-        {!editing && (
+        {!editing && !inWorkspace && (
           <Button
             appearance="subtle"
             style={{ color: 'inherit' }}
@@ -183,39 +201,43 @@ export function Shell() {
           </Button>
         )}
         <div className={s.headerActions} aria-label="Project file actions">
-          <Button
-            size="small"
-            appearance="outline"
-            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-            onClick={() => {
-              setReloadAfter(false);
-              if (hasWork) setConfirmNew(true);
-              else startNew(false);
-            }}
-          >
-            New project
-          </Button>
-          <Button
-            size="small"
-            appearance="outline"
-            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-            title="Start a new project and refresh the whole screen"
-            onClick={() => {
-              setReloadAfter(true);
-              if (hasWork) setConfirmNew(true);
-              else startNew(true);
-            }}
-          >
-            Fresh start
-          </Button>
-          <Button
-            size="small"
-            appearance="outline"
-            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-            onClick={() => setShowProjects(true)}
-          >
-            Projects
-          </Button>
+          {!inWorkspace && (
+            <>
+              <Button
+                size="small"
+                appearance="outline"
+                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+                onClick={() => {
+                  setReloadAfter(false);
+                  if (hasWork) setConfirmNew(true);
+                  else startNew(false);
+                }}
+              >
+                New project
+              </Button>
+              <Button
+                size="small"
+                appearance="outline"
+                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+                title="Start a new project and refresh the whole screen"
+                onClick={() => {
+                  setReloadAfter(true);
+                  if (hasWork) setConfirmNew(true);
+                  else startNew(true);
+                }}
+              >
+                Fresh start
+              </Button>
+              <Button
+                size="small"
+                appearance="outline"
+                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+                onClick={() => setShowProjects(true)}
+              >
+                Projects
+              </Button>
+            </>
+          )}
           <Button
             size="small"
             appearance="outline"

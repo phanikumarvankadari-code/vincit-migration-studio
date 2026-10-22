@@ -91,6 +91,15 @@ export function loadFromLibrary(id: string): Stored {
   }
 }
 
+/** The saved text of a project kept in the browser library (for moving it into a workspace). */
+export function readLibraryText(id: string): string | undefined {
+  try {
+    return window.localStorage.getItem(entryKey(id)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function deleteFromLibrary(id: string): void {
   try {
     window.localStorage.removeItem(entryKey(id));

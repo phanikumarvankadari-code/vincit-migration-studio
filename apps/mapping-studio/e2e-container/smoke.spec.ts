@@ -5,7 +5,8 @@ test.describe('container smoke test (SPEC-030)', () => {
     const health = await request.get('/healthz');
     expect(health.status()).toBe(200);
     await page.goto('/');
-    await expect(page.getByTestId('project-name')).toBeVisible();
+    await expect(page.getByTestId('home')).toBeVisible();
+    await expect(page.getByText('Create your first customer')).toBeVisible();
   });
 
   test('AC-4 a file on the mounted volume is listed and downloadable', async ({ request }) => {
@@ -20,7 +21,7 @@ test.describe('container smoke test (SPEC-030)', () => {
   }) => {
     const file = await request.get('/data/profit-center/input/CEPC.csv');
     expect(file.status()).toBe(200);
-    await page.goto('/');
+    await page.goto('/?legacy=1');
     await page.getByTestId('source-files-input').setInputFiles({
       name: 'CEPC.csv',
       mimeType: 'text/csv',
@@ -31,6 +32,6 @@ test.describe('container smoke test (SPEC-030)', () => {
 
   test('unknown paths fall back to the app, not an error page', async ({ page }) => {
     await page.goto('/some/deep/link');
-    await expect(page.getByTestId('project-name')).toBeVisible();
+    await expect(page.getByTestId('home')).toBeVisible();
   });
 });

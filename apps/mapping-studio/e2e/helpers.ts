@@ -10,9 +10,9 @@ export const csv = (name: string, text: string) => ({
   buffer: Buffer.from(text, 'utf8'),
 });
 
-/** Opens the app and lands on the Sources stage. */
+/** Opens the app in classic single-project mode and lands on the Sources stage. */
 export async function openApp(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/?legacy=1');
   await expect(page.getByTestId('project-name')).toBeVisible();
 }
 
