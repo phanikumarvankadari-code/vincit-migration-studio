@@ -17,6 +17,7 @@ import { Section } from '../components/common';
 import { useStudio } from '../context';
 import { MappingEditor } from '../editor/MappingEditor';
 import { MappingTable } from './MappingTable';
+import { UndoBar } from './UndoBar';
 import { StructureSettings } from './StructureSettings';
 import { VisualMapper } from './VisualMapper';
 
@@ -46,6 +47,8 @@ export function MapStage() {
   const [view, setView] = useState<'table' | 'visual'>('table');
   const [filter, setFilter] = useState<RowFilter>({});
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
+  // "Hard-code a value" opens the editor on the Constant type.
+  const [preset, setPreset] = useState<'constant' | undefined>();
   const [settings, setSettings] = useState<TargetStructure | undefined>();
   const target = state.project.targetDefinition;
   const completeness = useMemo(
@@ -123,6 +126,7 @@ export function MapStage() {
         })}
       </div>
 
+      <UndoBar />
       <TabList
         selectedValue={view}
         onTabSelect={(_, d) => setView(d.value as 'table' | 'visual')}
@@ -139,15 +143,34 @@ export function MapStage() {
           filter={filter}
           onFilter={setFilter}
           selectedKey={selectedKey}
-          onSelect={(r) => setSelectedKey(r.key)}
+          onSelect={(r) => {
+            setPreset(undefined);
+            setSelectedKey(r.key);
+          }}
+          onHardCode={(r) => {
+            setPreset('constant');
+            setSelectedKey(r.key);
+          }}
         />
       ) : (
         <VisualMapper
-          onEditField={(structureId, fieldId) => setSelectedKey(`${structureId}/${fieldId}`)}
+          onEditField={(structureId, fieldId, p) => {
+            setPreset(p);
+            setSelectedKey(`${structureId}/${fieldId}`);
+          }}
         />
       )}
 
-      {selected && <MappingEditor row={selected} onClose={() => setSelectedKey(undefined)} />}
+      {selected && (
+        <MappingEditor
+          row={selected}
+          {...(preset ? { preset } : {})}
+          onClose={() => {
+            setSelectedKey(undefined);
+            setPreset(undefined);
+          }}
+        />
+      )}
       {settings && (
         <StructureSettings structure={settings} onClose={() => setSettings(undefined)} />
       )}

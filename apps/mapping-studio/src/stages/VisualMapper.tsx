@@ -11,7 +11,7 @@ const useStyles = makeStyles({
 export function VisualMapper({
   onEditField,
 }: {
-  onEditField: (structureId: string, fieldId: string) => void;
+  onEditField: (structureId: string, fieldId: string, preset?: 'constant') => void;
 }) {
   const s = useStyles();
   const [mode, setMode] = useState<'mapping' | 'relationships'>('mapping');

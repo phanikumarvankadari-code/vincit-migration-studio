@@ -10,16 +10,19 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import type { SourceDataset } from '@mms/mapping-core';
-import { suggestMappings, type MappingSuggestion } from '@mms/mapping-suggest';
 import {
-  applySuggestions,
-  connectFields,
-  disconnectTarget,
-  sourceNodeId,
-  targetNodeId,
-} from '@mms/studio-model';
+  confidenceBand,
+  mappingConfidence,
+  suggestMappings,
+  type MappingConfidence,
+  type MappingSuggestion,
+} from '@mms/mapping-suggest';
+import { connectFields, sourceNodeId, targetNodeId } from '@mms/studio-model';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nowIso, useStudio } from '../context';
+import { BAND_STYLE, ConfidenceTag, ConflictTag, OriginTag } from '../components/confidence';
+import { AiSettingsDialog } from '../editor/AiSettingsDialog';
+import { AiError, aiReady, aiSuggest, loadAiSettings, type AiSettings } from '../lib/ai-client';
 import { StatusPill } from './MappingTable';
 
 const useStyles = makeStyles({
@@ -119,6 +122,8 @@ interface Seg {
   id: string;
   d: string;
   dim: boolean;
+  /** The second candidate of a suggestion conflict, drawn lighter. */
+  alt?: boolean;
 }
 interface Item {
   key: string;
@@ -126,9 +131,13 @@ interface Item {
   targetFieldId: string;
   segs: Seg[];
   pill?: { x: number; y: number; label: string };
+  /** Colour of a suggestion line, from its confidence band. */
+  line?: string;
+  /** A warning marker for the conflicts of this target, with their messages. */
+  warn?: { x: number; y: number; count: number; text: string };
 }
 
-const STRONG = 0.7;
+const STRONG = 0.8; // High confidence
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 const curve = (x1: number, y1: number, x2: number, y2: number): string => {
   const xm = (x1 + x2) / 2;
@@ -143,10 +152,21 @@ const round = (n: number): number => Math.round(n * 10) / 10;
 export function MapperPanel({
   onEditField,
 }: {
-  onEditField: (structureId: string, fieldId: string) => void;
+  onEditField: (structureId: string, fieldId: string, preset?: 'constant') => void;
 }) {
   const s = useStyles();
-  const { state, send, rows, profiles } = useStudio();
+  const {
+    state,
+    send,
+    rows,
+    profiles,
+    suggestions,
+    setSuggestions,
+    acceptSuggestions,
+    conflicts,
+    conflictsByField,
+    deleteMappings,
+  } = useStudio();
   const project = state.project;
   const structures = project.targetDefinition?.structures ?? [];
   const datasets = useMemo<SourceDataset[]>(
@@ -162,7 +182,10 @@ export function MapperPanel({
   const [selectedSource, setSelectedSource] = useState<string | undefined>();
   const [selectedTarget, setSelectedTarget] = useState<string | undefined>();
   const [focusSuggestion, setFocusSuggestion] = useState<string | undefined>();
-  const [suggestions, setSuggestions] = useState<MappingSuggestion[] | undefined>();
+  const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings);
+  const [showAi, setShowAi] = useState(false);
+  const [aiBusy, setAiBusy] = useState<string | undefined>();
+  const [showConflicts, setShowConflicts] = useState(true);
   const [drag, setDrag] = useState<{ path: string } | undefined>();
   const [message, setMessage] = useState<{ intent: 'error' | 'info'; text: string } | undefined>();
   const [items, setItems] = useState<Item[]>([]);
@@ -182,6 +205,14 @@ export function MapperPanel({
   const usedSources = useMemo(
     () => new Set(mappings.flatMap((m) => m.sourceReferences.map((r) => r.fieldId as string))),
     [mappings],
+  );
+  // How well each mapping in place matches: a direct copy is scored, the rest is the user's own design (manual).
+  const confOf = useMemo(
+    () =>
+      new Map<string, MappingConfidence>(
+        mappings.map((m) => [m.targetFieldId as string, mappingConfidence(project, m, state.data)]),
+      ),
+    [mappings, project, state.data],
   );
   const mappedTargets = useMemo(
     () => new Set(mappings.map((m) => m.targetFieldId as string)),
@@ -269,12 +300,30 @@ export function MapperPanel({
         });
       }
       if (fn) segs.push({ id: `${m.id}|out`, d: `M ${px} ${t.y} L ${xt} ${t.y}`, dim: t.dim });
+      const cs = conflictsByField.get(m.targetFieldId) ?? [];
       next.push({
         key: m.id,
         kind: 'mapping',
         targetFieldId: m.targetFieldId,
         segs,
+        ...(confOf.get(m.targetFieldId)?.kind === 'matched'
+          ? {
+              line: BAND_STYLE[
+                (confOf.get(m.targetFieldId) as { band: 'high' | 'medium' | 'low' }).band
+              ].line,
+            }
+          : {}),
         ...(fn ? { pill: { x: px, y: t.y, label: fn } } : {}),
+        ...(cs.length > 0
+          ? {
+              warn: {
+                x: xt - 16,
+                y: t.y - 14,
+                count: cs.length,
+                text: cs.map((c) => c.message).join('\n'),
+              },
+            }
+          : {}),
       });
     }
     for (const sg of openSuggestions) {
@@ -282,12 +331,29 @@ export function MapperPanel({
       const a = find([`s:${sg.sourceFieldId}`, `sd:${ds?.id ?? ''}`], L);
       const t = find([`t:${sg.targetFieldId}`], R);
       if (!a || !t) continue;
+      const segs: Seg[] = [{ id: `sg-${sg.id}`, d: curve(xs, a.y, xt, t.y), dim: a.dim || t.dim }];
+      if (sg.conflict) {
+        const ods = datasets.find((d) => d.id === sg.conflict!.datasetId);
+        const o = find([`s:${sg.conflict.sourceFieldId}`, `sd:${ods?.id ?? ''}`], L);
+        if (o)
+          segs.push({
+            id: `sg-${sg.id}-alt`,
+            d: curve(xs, o.y, xt, t.y),
+            dim: o.dim || t.dim,
+            alt: true,
+          });
+      }
       next.push({
         key: `sg-${sg.id}`,
         kind: 'suggestion',
         targetFieldId: sg.targetFieldId,
-        segs: [{ id: `sg-${sg.id}`, d: curve(xs, a.y, xt, t.y), dim: a.dim || t.dim }],
-        pill: { x: (xs + xt) / 2, y: (a.y + t.y) / 2, label: pct(sg.score) },
+        segs,
+        line: BAND_STYLE[confidenceBand(sg.score)].line,
+        pill: {
+          x: (xs + xt) / 2,
+          y: (a.y + t.y) / 2,
+          label: `${sg.conflict ? '⚠ ' : ''}${pct(sg.score)} · ${sg.origin === 'rules' ? 'Rules' : sg.origin === 'ai' ? 'AI' : 'Rules+AI'}`,
+        },
       });
     }
     const key = (list: Item[]) =>
@@ -300,6 +366,8 @@ export function MapperPanel({
             g.dim,
           ]),
           i.pill && [round(i.pill.x), round(i.pill.y), i.pill.label],
+          i.warn && [round(i.warn.x), round(i.warn.y), i.warn.count],
+          i.line,
         ]),
       );
     setItems((cur) => (key(cur) === key(next) ? cur : next));
@@ -394,14 +462,12 @@ export function MapperPanel({
 
   // Delete removes the mapping of the selected target field (not while typing in a box).
   const removeSelected = useCallback(() => {
-    if (!structure || !selectedTarget) return;
-    const r = disconnectTarget(project, structure.id, selectedTarget, nowIso());
-    if (r.ok) {
-      send({ type: 'projectEdited', project: r.project });
+    if (!structure || !selectedTarget || !mappedTargets.has(selectedTarget)) return;
+    if (deleteMappings([{ structureId: structure.id, fieldId: selectedTarget }]) > 0) {
       setMessage({ intent: 'info', text: 'Mapping removed.' });
       setSelectedTarget(undefined);
     }
-  }, [project, structure, selectedTarget, send]);
+  }, [structure, selectedTarget, mappedTargets, deleteMappings]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -415,16 +481,7 @@ export function MapperPanel({
   }, [removeSelected]);
 
   const accept = (list: MappingSuggestion[]) => {
-    const r = applySuggestions(
-      project,
-      list.map((x) => ({
-        structureId: x.targetStructureId,
-        targetFieldId: x.targetFieldId,
-        sourceFieldId: x.sourceFieldId,
-      })),
-      nowIso(),
-    );
-    if (r.applied > 0) send({ type: 'projectEdited', project: r.project });
+    const r = acceptSuggestions(list);
     setMessage({
       intent: 'info',
       text: `${r.applied} mapping${r.applied === 1 ? '' : 's'} created${r.skipped ? `, ${r.skipped} skipped` : ''}.`,
@@ -442,6 +499,40 @@ export function MapperPanel({
           : `${found.length} suggestion${found.length === 1 ? '' : 's'}. Nothing is mapped until you accept it.`,
     });
   };
+  const askAi = async () => {
+    if (!structure) return;
+    if (!aiReady(aiSettings)) {
+      setShowAi(true);
+      return;
+    }
+    const rules = suggestMappings(project, { structureId: structure.id, data: state.data });
+    // The rule-based suggestions show at once; the model's answers are merged in when they arrive.
+    setSuggestions(rules);
+    setAiBusy('Asking the model…');
+    try {
+      const r = await aiSuggest({
+        project,
+        structureId: structure.id,
+        rules,
+        settings: aiSettings,
+        onProgress: (done, total) =>
+          setAiBusy(done < total ? `Asking the model… batch ${done + 1} of ${total}` : undefined),
+      });
+      setSuggestions(r.suggestions);
+      const n = r.suggestions.filter((x) => x.origin !== 'rules').length;
+      setMessage({
+        intent: 'info',
+        text: `${r.suggestions.length} suggestion${r.suggestions.length === 1 ? '' : 's'} (${n} with AI). Nothing is mapped until you accept it.${r.problems.length ? ` ${r.problems.length} answer${r.problems.length === 1 ? '' : 's'} could not be used.` : ''}`,
+      });
+    } catch (e) {
+      setMessage({
+        intent: 'error',
+        text: `${e instanceof AiError ? e.message : 'The AI suggestions failed.'} The rule-based suggestions are still available.`,
+      });
+    } finally {
+      setAiBusy(undefined);
+    }
+  };
 
   const fieldName = (fieldId: string): string => {
     for (const d of datasets) {
@@ -452,6 +543,7 @@ export function MapperPanel({
   };
 
   const selRow = selectedTarget ? rowOf.get(selectedTarget) : undefined;
+  const structureConflicts = conflicts.filter((c) => c.structureId === structure?.id);
 
   return (
     <div data-testid="mapper">
@@ -478,6 +570,21 @@ export function MapperPanel({
         <Button appearance="primary" onClick={suggest}>
           Suggest mappings
         </Button>
+        <Button
+          onClick={() => void askAi()}
+          disabled={aiBusy !== undefined}
+          data-testid="ai-suggest"
+        >
+          AI suggest
+        </Button>
+        <Button appearance="subtle" onClick={() => setShowAi(true)}>
+          AI settings
+        </Button>
+        {aiBusy && (
+          <Text className={s.muted} data-testid="ai-busy">
+            {aiBusy}
+          </Text>
+        )}
         <Text className={s.muted}>
           Drag a source field onto a target field, or click one and then the other. Click a target
           field or a line to edit or remove its mapping.
@@ -490,6 +597,40 @@ export function MapperPanel({
         >
           <MessageBarBody>{message.text}</MessageBarBody>
         </MessageBar>
+      )}
+      {structureConflicts.length > 0 && (
+        <div
+          className={s.panel}
+          style={{ display: 'block', marginTop: 0, marginBottom: 12 }}
+          data-testid="conflict-list"
+        >
+          <div className={s.suggestion} style={{ borderBottom: 'none' }}>
+            <ConflictTag count={structureConflicts.length} />
+            <Text weight="semibold">Conflicts in {structure?.name}</Text>
+            <Button
+              size="small"
+              appearance="transparent"
+              onClick={() => setShowConflicts((v) => !v)}
+            >
+              {showConflicts ? 'Hide' : 'Show'}
+            </Button>
+          </div>
+          {showConflicts &&
+            structureConflicts.map((c) => (
+              <div key={c.id} className={s.suggestion} data-testid={`conflict-${c.kind}`}>
+                <Text style={{ flex: 1 }}>{c.message}</Text>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setSelectedTarget(c.targetFieldIds[0]);
+                    setSelectedSource(undefined);
+                  }}
+                >
+                  Show field
+                </Button>
+              </div>
+            ))}
+        </div>
       )}
       {selectedSource && (
         <MessageBar intent="info" data-testid="pick-target">
@@ -654,7 +795,31 @@ export function MapperPanel({
                       Key
                     </Badge>
                   )}
-                  {r && <StatusPill status={r.status} />}
+                  {(conflictsByField.get(f.id)?.length ?? 0) > 0 && (
+                    <ConflictTag
+                      count={conflictsByField.get(f.id)!.length}
+                      title={conflictsByField
+                        .get(f.id)!
+                        .map((c) => c.message)
+                        .join('\n')}
+                      testId={`tgt-conflict-${f.id}`}
+                    />
+                  )}
+                  {r &&
+                    (r.mapping ? (
+                      <ConfidenceCapsule
+                        fieldName={f.displayName}
+                        fieldId={f.id}
+                        confidence={confOf.get(f.id)}
+                        conflicts={conflictsByField.get(f.id)?.length ?? 0}
+                        onResolve={() => {
+                          setSelectedTarget(f.id);
+                          setSelectedSource(undefined);
+                        }}
+                      />
+                    ) : (
+                      <StatusPill status={r.status} />
+                    ))}
                 </div>
               );
             })}
@@ -677,10 +842,11 @@ export function MapperPanel({
                     <path
                       d={g.d}
                       fill="none"
-                      stroke={suggestion ? '#b36b00' : '#3b6ea5'}
-                      strokeWidth={on ? 3 : 1.6}
-                      strokeDasharray={suggestion ? '6 4' : undefined}
-                      data-testid={`${suggestion ? 'suggest' : 'link'}-${it.targetFieldId}`}
+                      stroke={suggestion ? (it.line ?? '#b36b00') : (it.line ?? '#3b6ea5')}
+                      strokeWidth={on ? 3 : g.alt ? 1.2 : 1.6}
+                      strokeDasharray={g.alt ? '2 5' : suggestion ? '6 4' : undefined}
+                      opacity={g.alt ? 0.65 : 1}
+                      data-testid={`${suggestion ? (g.alt ? 'suggest-alt' : 'suggest') : 'link'}-${it.targetFieldId}`}
                     />
                     {!suggestion && (
                       <path
@@ -711,6 +877,33 @@ export function MapperPanel({
           </svg>
           {items.map(
             (it) =>
+              it.warn && (
+                <button
+                  key={`warn-${it.key}`}
+                  type="button"
+                  className={s.pill}
+                  aria-label={`${it.warn.count} ${it.warn.count === 1 ? 'conflict' : 'conflicts'} for this mapping`}
+                  title={it.warn.text}
+                  data-testid={`conflict-marker-${it.targetFieldId}`}
+                  style={{
+                    left: it.warn.x,
+                    top: it.warn.y,
+                    border: '1px solid #C9863A',
+                    background: '#FDEBD9',
+                    color: '#7A3A00',
+                    fontWeight: 700,
+                  }}
+                  onClick={() => {
+                    setSelectedTarget(it.targetFieldId);
+                    setSelectedSource(undefined);
+                  }}
+                >
+                  ⚠ {it.warn.count}
+                </button>
+              ),
+          )}
+          {items.map(
+            (it) =>
               it.pill && (
                 <button
                   key={`pill-${it.key}`}
@@ -719,7 +912,7 @@ export function MapperPanel({
                   style={{
                     left: it.pill.x,
                     top: it.pill.y,
-                    border: `1px solid ${it.kind === 'suggestion' ? '#b36b00' : '#3b6ea5'}`,
+                    border: `1px solid ${it.kind === 'suggestion' ? (it.line ?? '#b36b00') : '#3b6ea5'}`,
                     background: it.kind === 'suggestion' ? '#fff8e6' : '#eaf3fb',
                     color: '#222',
                   }}
@@ -748,17 +941,43 @@ export function MapperPanel({
           <Text className={s.muted}>
             {selRow.mapping ? `${selRow.source} · ${selRow.transformation}` : 'Not mapped yet'}
           </Text>
+          {selRow.mapping && confOf.get(selRow.fieldId)?.kind === 'matched' && (
+            <Text style={{ flexBasis: '100%' }} data-testid="panel-confidence">
+              Match confidence:{' '}
+              <ConfidenceTag score={(confOf.get(selRow.fieldId) as { score: number }).score} /> —{' '}
+              {(confOf.get(selRow.fieldId) as { reasons: string[] }).reasons.join('; ')}
+              {(confOf.get(selRow.fieldId) as { band: string }).band === 'low'
+                ? '. Check that this is the right source field.'
+                : ''}
+            </Text>
+          )}
+          {(conflictsByField.get(selRow.fieldId) ?? []).map((c) => (
+            <Text
+              key={c.id}
+              style={{ color: '#7A3A00', flexBasis: '100%' }}
+              data-testid="panel-conflict"
+            >
+              ⚠ {c.message}
+            </Text>
+          ))}
           <Button
             appearance="primary"
             onClick={() => onEditField(selRow.structureId, selRow.fieldId)}
           >
             Edit mapping
           </Button>
+          {!selRow.mapping && (
+            <Button
+              data-testid="hard-code"
+              onClick={() => onEditField(selRow.structureId, selRow.fieldId, 'constant')}
+            >
+              Hard-code a value
+            </Button>
+          )}
           {selRow.mapping && (
             <Button
               onClick={() => {
-                const r = disconnectTarget(project, selRow.structureId, selRow.fieldId, nowIso());
-                if (r.ok) send({ type: 'projectEdited', project: r.project });
+                deleteMappings([{ structureId: selRow.structureId, fieldId: selRow.fieldId }]);
                 setSelectedTarget(undefined);
               }}
             >
@@ -774,10 +993,14 @@ export function MapperPanel({
             <Text weight="semibold">Suggested mappings ({openSuggestions.length})</Text>
             <Button
               size="small"
-              disabled={openSuggestions.filter((x) => x.score >= STRONG).length === 0}
-              onClick={() => accept(openSuggestions.filter((x) => x.score >= STRONG))}
+              disabled={
+                openSuggestions.filter((x) => x.score >= STRONG && !x.conflict).length === 0
+              }
+              onClick={() =>
+                accept(openSuggestions.filter((x) => x.score >= STRONG && !x.conflict))
+              }
             >
-              Accept all at {pct(STRONG)} or more
+              Accept all High ({pct(STRONG)} or more, no conflict)
             </Button>
             <Button size="small" appearance="transparent" onClick={() => setSuggestions(undefined)}>
               Close
@@ -802,9 +1025,15 @@ export function MapperPanel({
                 <Text>
                   {fieldName(x.sourceFieldId)} → <b>{target?.displayName ?? x.targetFieldId}</b>
                 </Text>
-                <Badge appearance="tint" color={x.score >= STRONG ? 'success' : 'warning'}>
-                  {pct(x.score)}
-                </Badge>
+                <ConfidenceTag score={x.score} testId={`confidence-${x.targetFieldId}`} />
+                <OriginTag origin={x.origin} testId={`origin-${x.targetFieldId}`} />
+                {x.conflict && (
+                  <ConflictTag
+                    count={1}
+                    title={`${x.conflict.origin === 'ai' ? 'AI' : 'Rules'} prefer ${fieldName(x.conflict.sourceFieldId)} (${pct(x.conflict.score)})`}
+                    testId={`sg-conflict-${x.targetFieldId}`}
+                  />
+                )}
                 <Text size={200} className={s.muted} style={{ flex: 1 }}>
                   {x.reasons.join('; ')}
                   {x.alternatives.length > 0 &&
@@ -824,6 +1053,66 @@ export function MapperPanel({
           })}
         </div>
       )}
+      <AiSettingsDialog
+        key={showAi ? 'open' : 'closed'}
+        open={showAi}
+        settings={aiSettings}
+        onClose={() => setShowAi(false)}
+        onSave={setAiSettings}
+      />
     </div>
+  );
+}
+
+/** The mapped state of a target field, coloured by how well the mapping matches. Click it to look at the mapping. */
+function ConfidenceCapsule({
+  fieldName,
+  fieldId,
+  confidence,
+  conflicts,
+  onResolve,
+}: {
+  fieldName: string;
+  fieldId: string;
+  confidence: MappingConfidence | undefined;
+  conflicts: number;
+  onResolve: () => void;
+}) {
+  const matched = confidence?.kind === 'matched' ? confidence : undefined;
+  const band = matched ? BAND_STYLE[matched.band] : undefined;
+  const text = matched
+    ? `Mapped · ${Math.round(matched.score * 100)}% ${band!.label}`
+    : 'Mapped · Manual';
+  const label = `${text}${conflicts > 0 ? ` · ${conflicts} ${conflicts === 1 ? 'conflict' : 'conflicts'}` : ''}`;
+  return (
+    <button
+      type="button"
+      data-testid={`capsule-${fieldId}`}
+      data-band={matched ? matched.band : 'manual'}
+      aria-label={`Resolve ${fieldName}: ${label}`}
+      title={
+        matched
+          ? `Click to review: ${matched.reasons.join('; ')}`
+          : 'Your own design. Click to open.'
+      }
+      onClick={(e) => {
+        e.stopPropagation();
+        onResolve();
+      }}
+      style={{
+        border: `1px solid ${band?.line ?? '#3b6ea5'}`,
+        background: band?.bg ?? '#E5EAFB',
+        color: band?.color ?? '#1F3A8A',
+        borderRadius: 999,
+        padding: '2px 10px',
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {text}
+      {conflicts > 0 ? ' ⚠' : ''}
+    </button>
   );
 }

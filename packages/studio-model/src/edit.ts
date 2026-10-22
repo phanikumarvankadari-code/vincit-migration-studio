@@ -164,3 +164,27 @@ export function upsertLookup(project: Project, lookup: LookupDefinition, at: str
 
 /** Problems with references in the project (empty when consistent). */
 export const projectIssues = (project: Project) => validateProject(project);
+
+/** Removes the mappings of several target fields in one edit (fields without a mapping are skipped). */
+export function removeMappings(
+  project: Project,
+  targets: readonly { structureId: string; fieldId: string }[],
+  at: string,
+): { project: Project; removed: number } {
+  const drop = new Set(targets.map((t) => `${t.structureId}/${t.fieldId}`));
+  const mappings = project.mappingDefinition.mappings.filter(
+    (m) => !drop.has(`${m.targetStructureId}/${m.targetFieldId}`),
+  );
+  const removed = project.mappingDefinition.mappings.length - mappings.length;
+  if (removed === 0) return { project, removed: 0 };
+  return {
+    project: touch(
+      normalizeManifests({
+        ...project,
+        mappingDefinition: { ...project.mappingDefinition, mappings },
+      }),
+      at,
+    ),
+    removed,
+  };
+}

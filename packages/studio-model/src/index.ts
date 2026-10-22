@@ -9,3 +9,4 @@ export * from './preview.js';
 export * from './snapshots.js';
 export * from './persistence.js';
 export * from './summary.js';
+export * from './conflicts.js';

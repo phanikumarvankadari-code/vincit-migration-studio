@@ -1,4 +1,10 @@
-import type { Project, SourceField, SourceRows, TargetField } from '@mms/mapping-core';
+import type {
+  FieldMapping,
+  Project,
+  SourceField,
+  SourceRows,
+  TargetField,
+} from '@mms/mapping-core';
 
 export interface MappingSuggestion {
   /** Stable: the target field ID. One best suggestion per target field. */
@@ -13,7 +19,17 @@ export interface MappingSuggestion {
   reasons: string[];
   /** The next best sources, best first (at most two). */
   alternatives: { datasetId: string; sourceFieldId: string; score: number }[];
+  /** Who proposed it. Rule-based suggestions are "rules"; see ai.ts for the others. */
+  origin: 'rules' | 'ai' | 'both';
+  /** Set when the rules and the AI disagree: the other proposal, which lost on confidence. */
+  conflict?: { datasetId: string; sourceFieldId: string; score: number; origin: 'rules' | 'ai' };
 }
+
+export type ConfidenceBand = 'high' | 'medium' | 'low';
+
+/** High 80% or more, Medium 60 to 79%, Low below 60%. */
+export const confidenceBand = (score: number): ConfidenceBand =>
+  score >= 0.8 ? 'high' : score >= 0.6 ? 'medium' : 'low';
 
 export interface SuggestMappingsOptions {
   /** Minimum score of a suggestion. Default 0.5. */
@@ -59,7 +75,7 @@ interface Scored {
   reasons: string[];
 }
 
-function score(
+export function scoreFieldPair(
   target: TargetField,
   source: SourceField,
   rows: SourceRows | undefined,
@@ -71,10 +87,10 @@ function score(
     source.technicalName &&
     target.technicalName.toLowerCase() === source.technicalName.toLowerCase()
   ) {
-    s += 0.6;
+    s += 0.65;
     reasons.push(`same technical name ${source.technicalName}`);
   } else if (norm(target.displayName) === norm(source.displayName)) {
-    s += 0.55;
+    s += 0.6;
     reasons.push(`same name "${source.displayName}"`);
   } else {
     const shared = overlap(
@@ -143,7 +159,7 @@ export function suggestMappings(
       if (mapped.has(t.id)) continue;
       const scored: Scored[] = [];
       for (const src of sources) {
-        const r = score(t, src.field, options.data?.[src.datasetId]);
+        const r = scoreFieldPair(t, src.field, options.data?.[src.datasetId]);
         if (r.score >= min) scored.push({ ...src, ...r });
       }
       // Stable sort: equal scores keep the order of the sources.
@@ -158,6 +174,7 @@ export function suggestMappings(
         sourceFieldId: best.field.id,
         score: best.score,
         reasons: best.reasons,
+        origin: 'rules',
         alternatives: scored.slice(1, 3).map((a) => ({
           datasetId: a.datasetId,
           sourceFieldId: a.field.id,
@@ -167,4 +184,37 @@ export function suggestMappings(
     }
   }
   return out;
+}
+
+/**
+ * How well a mapping that is already in place matches, worked out the same way as a suggestion: a direct copy of
+ * one source field gets a score and a band; anything else (routines, constants, lookups, conditions, JavaScript)
+ * is the user's own design and is "manual". A low score is a reason to look again, not an error.
+ */
+export type MappingConfidence =
+  { kind: 'matched'; score: number; band: ConfidenceBand; reasons: string[] } | { kind: 'manual' };
+
+export function mappingConfidence(
+  project: Project,
+  mapping: FieldMapping,
+  data?: Readonly<Record<string, SourceRows>>,
+): MappingConfidence {
+  const ref = mapping.sourceReferences[0];
+  if (mapping.mappingType !== 'direct' || mapping.transformations.length > 0 || !ref)
+    return { kind: 'manual' };
+  const target = project.targetDefinition?.structures
+    .flatMap((st) => st.fields)
+    .find((f) => f.id === mapping.targetFieldId);
+  const source = project.sourceDefinitions
+    .flatMap((d) => d.datasets)
+    .flatMap((d) => d.fields)
+    .find((f) => f.id === ref.fieldId);
+  if (!target || !source) return { kind: 'manual' };
+  const r = scoreFieldPair(target, source, data?.[ref.datasetId]);
+  return {
+    kind: 'matched',
+    score: r.score,
+    band: confidenceBand(r.score),
+    reasons: r.reasons.length > 0 ? r.reasons : ['the names do not resemble each other'],
+  };
 }
