@@ -7,10 +7,7 @@ export function UndoBar() {
   if (!lastDeleted) return null;
   return (
     <MessageBar intent="info" data-testid="undo-bar">
-      <MessageBarBody>
-        {lastDeleted.count === 1 ? 'Mapping removed' : `${lastDeleted.count} mappings removed`}
-        {lastDeleted.fields ? `: ${lastDeleted.fields}` : ''}.
-      </MessageBarBody>
+      <MessageBarBody>{lastDeleted.message}</MessageBarBody>
       <Button size="small" appearance="primary" onClick={undoDelete}>
         Undo
       </Button>

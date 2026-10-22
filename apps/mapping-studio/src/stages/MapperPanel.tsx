@@ -1,6 +1,7 @@
 import {
   Badge,
   Button,
+  Checkbox,
   Input,
   MessageBar,
   MessageBarBody,
@@ -17,7 +18,7 @@ import {
   type MappingConfidence,
   type MappingSuggestion,
 } from '@mms/mapping-suggest';
-import { connectFields, sourceNodeId, targetNodeId } from '@mms/studio-model';
+import { connectFields, scopeOf, sourceNodeId, targetNodeId } from '@mms/studio-model';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nowIso, useStudio } from '../context';
 import { BAND_STYLE, ConfidenceTag, ConflictTag, OriginTag } from '../components/confidence';
@@ -186,6 +187,9 @@ export function MapperPanel({
   const [tgtSearch, setTgtSearch] = useState('');
   const [tgtFilter, setTgtFilter] = useState<'all' | 'unmapped' | 'requiredUnmapped'>('all');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  // Datasets outside the structure's pair start closed; these are the ones the person opened.
+  const [openOutside, setOpenOutside] = useState<ReadonlySet<string>>(new Set());
+  const [alsoOthers, setAlsoOthers] = useState(false);
   const [selectedSource, setSelectedSource] = useState<string | undefined>();
   const [selectedTarget, setSelectedTarget] = useState<string | undefined>();
   const [focusSuggestion, setFocusSuggestion] = useState<string | undefined>();
@@ -198,6 +202,21 @@ export function MapperPanel({
   const [items, setItems] = useState<Item[]>([]);
 
   const structure = structures.find((x) => x.id === structureId) ?? structures[0];
+  const scope = useMemo(
+    () => (structure ? scopeOf(project, structure.id) : undefined),
+    [project, structure],
+  );
+  const driverId = scope?.[0];
+  const orderedDatasets = useMemo(
+    () =>
+      scope
+        ? [
+            ...datasets.filter((d) => scope.includes(d.id)),
+            ...datasets.filter((d) => !scope.includes(d.id)),
+          ]
+        : datasets,
+    [datasets, scope],
+  );
   const mappings = useMemo(
     () => project.mappingDefinition.mappings.filter((m) => m.targetStructureId === structure?.id),
     [project.mappingDefinition.mappings, structure?.id],
@@ -496,7 +515,11 @@ export function MapperPanel({
   };
   const suggest = () => {
     if (!structure) return;
-    const found = suggestMappings(project, { structureId: structure.id, data: state.data });
+    const found = suggestMappings(project, {
+      structureId: structure.id,
+      data: state.data,
+      ...(scope ? { datasetIds: scope, includeOthers: alsoOthers } : {}),
+    });
     setSuggestions(found);
     setMessage({
       intent: 'info',
@@ -532,7 +555,11 @@ export function MapperPanel({
         return;
       }
     }
-    const rules = suggestMappings(project, { structureId: structure.id, data: state.data });
+    const rules = suggestMappings(project, {
+      structureId: structure.id,
+      data: state.data,
+      ...(scope ? { datasetIds: scope, includeOthers: alsoOthers } : {}),
+    });
     // The rule-based suggestions show at once; the model's answers are merged in when they arrive.
     setSuggestions(rules);
     setAiBusy(`Asking ${settings.model}…`);
@@ -542,6 +569,7 @@ export function MapperPanel({
         structureId: structure.id,
         rules,
         settings,
+        ...(scope && !alsoOthers ? { datasetIds: scope } : {}),
         signal: ctl.signal,
         onProgress: (done, total) =>
           setAiBusy(
@@ -601,6 +629,13 @@ export function MapperPanel({
         <Button appearance="primary" onClick={suggest}>
           Suggest mappings
         </Button>
+        {scope && (
+          <Checkbox
+            label="Also look in other structures"
+            checked={alsoOthers}
+            onChange={(_, d) => setAlsoOthers(d.checked === true)}
+          />
+        )}
         <Button
           onClick={() => void askAi()}
           disabled={aiBusy !== undefined}
@@ -694,8 +729,9 @@ export function MapperPanel({
                 No source files yet. Add them in Sources.
               </Text>
             )}
-            {datasets.map((d) => {
-              const isCollapsed = collapsed.has(d.id);
+            {orderedDatasets.map((d) => {
+              const outside = scope !== undefined && !scope.includes(d.id);
+              const isCollapsed = outside ? !openOutside.has(d.id) : collapsed.has(d.id);
               const shown = visibleSources(d);
               return (
                 <div key={d.id}>
@@ -706,7 +742,7 @@ export function MapperPanel({
                     aria-expanded={!isCollapsed}
                     data-testid={`dataset-group-${d.name}`}
                     onClick={() =>
-                      setCollapsed((cur) => {
+                      (outside ? setOpenOutside : setCollapsed)((cur) => {
                         const next = new Set(cur);
                         if (next.has(d.id)) next.delete(d.id);
                         else next.add(d.id);
@@ -719,6 +755,16 @@ export function MapperPanel({
                     <Text size={200} className={s.muted}>
                       {d.fields.length} fields
                     </Text>
+                    {scope && (
+                      <Badge
+                        size="small"
+                        appearance={d.id === driverId ? 'filled' : 'outline'}
+                        color={d.id === driverId ? 'brand' : 'subtle'}
+                        data-testid={`scope-tag-${d.name}`}
+                      >
+                        {d.id === driverId ? 'Driver' : outside ? 'Other structure' : 'Joined'}
+                      </Badge>
+                    )}
                   </button>
                   {!isCollapsed &&
                     shown.map((f) => {

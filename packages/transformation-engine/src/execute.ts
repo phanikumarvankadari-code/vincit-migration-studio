@@ -202,7 +202,7 @@ export function executeMapping(
         diag(
           'error',
           'ENGINE_NO_DRIVER',
-          `Cannot tell which dataset drives the rows of "${structure.name}"${needed.size > 1 ? ` (its mappings read ${[...needed].join(', ')})` : ' (its mappings read no source data)'}. Set the driver dataset on the structure.`,
+          `Cannot tell which dataset drives the rows of "${structure.name}"${needed.size > 1 ? ` (its mappings read ${[...needed].join(', ')})` : ' (its mappings read no source data)'}. Pair the structure with its source dataset (Map › Structures), or set the driver dataset in its settings.`,
           structCtx,
         ),
       );

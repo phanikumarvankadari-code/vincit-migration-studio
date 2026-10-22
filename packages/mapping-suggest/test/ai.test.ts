@@ -387,3 +387,203 @@ describe('hard-coded value suggestions (SPEC-036)', () => {
     expect(parseValueResponse('no idea')).toMatchObject({ ok: false });
   });
 });
+
+import {
+  buildStructureAiPrompt,
+  coverageOf,
+  mergeStructureSuggestions,
+  parseStructureAiResponse,
+  suggestStructurePairs,
+} from '../src/index.js';
+
+describe('structure pairing (SPEC-037)', () => {
+  /** Two source datasets, two target structures whose names resemble nothing in the source. */
+  function twoByTwo(): Project {
+    const p = project();
+    const sd = p.sourceDefinitions[0]!;
+    const orders = {
+      id: 'ds-2',
+      sourceId: 'src-1',
+      name: 'ZORD',
+      displayName: 'ZORD',
+      fields: [
+        {
+          id: 'o1',
+          datasetId: 'ds-2',
+          displayName: 'Order Number',
+          datatype: 'string' as const,
+          length: 10,
+          isKey: true,
+        },
+        { id: 'o2', datasetId: 'ds-2', displayName: 'Order Date', datatype: 'date' as const },
+        {
+          id: 'o3',
+          datasetId: 'ds-2',
+          displayName: 'Profit Center',
+          datatype: 'string' as const,
+          length: 10,
+        },
+      ],
+    };
+    sd.datasets.push(orders as never);
+    p.targetDefinition!.structures.push({
+      id: 'st-2',
+      targetDefinitionId: 'tgt-1',
+      name: 'Sales Documents',
+      displayName: 'Sales Documents',
+      fields: [
+        {
+          id: 'sf1',
+          targetStructureId: 'st-2',
+          displayName: 'Order Number',
+          datatype: 'string',
+          required: true,
+          isKey: true,
+        },
+        {
+          id: 'sf2',
+          targetStructureId: 'st-2',
+          displayName: 'Order Date',
+          datatype: 'date',
+          required: true,
+          isKey: false,
+        },
+        {
+          id: 'sf3',
+          targetStructureId: 'st-2',
+          displayName: 'Profit Center',
+          datatype: 'string',
+          required: false,
+          isKey: false,
+        },
+      ],
+    } as never);
+    return p;
+  }
+
+  it('pairs by the fields, whatever the names of the structures and datasets are', () => {
+    const p = twoByTwo();
+    const pairs = suggestStructurePairs(p);
+    const by = Object.fromEntries(pairs.map((x) => [x.targetStructureId, x]));
+    expect(by['st-1']).toMatchObject({ driverDatasetId: 'ds-1', origin: 'rules' });
+    expect(by['st-2']).toMatchObject({ driverDatasetId: 'ds-2' });
+    expect(by['st-2']!.coverage).toMatchObject({
+      total: 3,
+      matched: 3,
+      requiredMatched: 2,
+      keysMatched: 1,
+    });
+    expect(by['st-2']!.reasons[0]).toContain('ZORD has a matching field for 3 of 3 target fields');
+    // the other dataset covers one of the three fields and none of the required ones: too weak to be offered
+    expect(by['st-2']!.alternatives).toEqual([]);
+  });
+
+  it('a dataset that does not fit gives no suggestion; a structure can be asked for alone; one dataset may drive several', () => {
+    const p = twoByTwo();
+    p.targetDefinition!.structures.push({
+      id: 'st-3',
+      targetDefinitionId: 'tgt-1',
+      name: 'Weather',
+      displayName: 'Weather',
+      fields: [
+        {
+          id: 'w1',
+          targetStructureId: 'st-3',
+          displayName: 'Rainfall',
+          datatype: 'decimal',
+          required: false,
+          isKey: false,
+        },
+      ],
+    } as never);
+    expect(suggestStructurePairs(p).find((x) => x.targetStructureId === 'st-3')).toBeUndefined();
+    expect(suggestStructurePairs(p, { structureId: 'st-2' })).toHaveLength(1);
+    // both structures read Profit Center: ds-1 is the driver of st-1 only because it covers more of it
+    expect(
+      coverageOf(p.targetDefinition!.structures[0]!, p.sourceDefinitions[0]!.datasets[0]!).coverage
+        .matched,
+    ).toBeGreaterThan(1);
+  });
+
+  it('a joined dataset that fills fields the driver cannot is offered as a helper', () => {
+    const p = twoByTwo();
+    p.targetDefinition!.structures[1]!.fields.push({
+      id: 'sf4',
+      targetStructureId: 'st-2',
+      displayName: 'Country',
+      datatype: 'string',
+      required: false,
+      isKey: false,
+    } as never);
+    p.mappingDefinition.relationships.push({
+      id: 'rel-1',
+      leftDatasetId: 'ds-2',
+      rightDatasetId: 'ds-1',
+      keys: [{ leftFieldId: 'o3', rightFieldId: 'f1' }],
+      cardinality: 'manyToOne',
+      joinType: 'left',
+      status: 'confirmed',
+    } as never);
+    const pair = suggestStructurePairs(p).find((x) => x.targetStructureId === 'st-2')!;
+    expect(pair.driverDatasetId).toBe('ds-2');
+    expect(pair.helperDatasetIds).toEqual(['ds-1']);
+    expect(pair.reasons.join(' ')).toContain('CEPC adds Country through a join');
+    // a rejected join is not a way to get the field
+    p.mappingDefinition.relationships[0]!.status = 'rejected';
+    expect(
+      suggestStructurePairs(p).find((x) => x.targetStructureId === 'st-2')!.helperDatasetIds,
+    ).toEqual([]);
+  });
+
+  it('the AI prompt holds names and fields only, and the answer is read and merged', () => {
+    const p = twoByTwo();
+    const rules = suggestStructurePairs(p);
+    const prompt = buildStructureAiPrompt(p, rules)!;
+    const user = JSON.parse(prompt.user) as {
+      targets: { id: string; name: string }[];
+      datasets: { id: string; name: string }[];
+    };
+    expect(user.targets.map((t) => t.name)).toEqual(['Profit Center', 'Sales Documents']);
+    expect(user.datasets.map((d) => d.name)).toEqual(['CEPC', 'ZORD']);
+    expect(prompt.system).toContain('You see no data values');
+    const answer =
+      '{"pairs":[{"target":"t1","driver":"d1","helpers":[],"confidence":90,"reason":"master data"},{"target":"t2","driver":"d1","confidence":99,"reason":"guess"},{"target":"t9","driver":"d1","confidence":50}]}';
+    const parsed = parseStructureAiResponse(answer, prompt);
+    expect(parsed.items.map((i) => [i.targetStructureId, i.driverDatasetId])).toEqual([
+      ['st-1', 'ds-1'],
+      ['st-2', 'ds-1'],
+    ]);
+    expect(parsed.problems).toHaveLength(1);
+    const merged = mergeStructureSuggestions(rules, parsed.items, p);
+    const st1 = merged.find((m) => m.targetStructureId === 'st-1')!;
+    expect(st1).toMatchObject({ origin: 'both', driverDatasetId: 'ds-1' });
+    expect(st1.score).toBeGreaterThan(rules.find((r) => r.targetStructureId === 'st-1')!.score);
+    const st2 = merged.find((m) => m.targetStructureId === 'st-2')!;
+    expect(st2).toMatchObject({ origin: 'ai', driverDatasetId: 'ds-1', score: 0.95 });
+    expect(st2.conflict).toMatchObject({ driverDatasetId: 'ds-2', origin: 'rules' });
+    expect(parseStructureAiResponse('nonsense', prompt).problems).toEqual([
+      'The answer was not the expected JSON.',
+    ]);
+  });
+
+  it('scoped field suggestions look in the pair first and only widen on request', () => {
+    const p = twoByTwo();
+    const only = suggestMappings(p, { structureId: 'st-2', datasetIds: ['ds-2'] });
+    expect(only.every((s) => s.datasetId === 'ds-2')).toBe(true);
+    const wide = suggestMappings(p, {
+      structureId: 'st-2',
+      datasetIds: ['ds-1'],
+      includeOthers: true,
+    });
+    const pc = wide.find((s) => s.targetFieldId === 'sf3')!; // Profit Center exists in both datasets
+    expect(pc.datasetId).toBe('ds-1');
+    const out = wide.find((s) => s.targetFieldId === 'sf1')!; // Order Number only in ds-2, outside the scope
+    expect(out.datasetId).toBe('ds-2');
+    expect(out.reasons.join(' ')).toContain('another structure');
+    expect(out.score).toBeLessThan(
+      suggestMappings(p, { structureId: 'st-2' }).find((s) => s.targetFieldId === 'sf1')!.score,
+    );
+    const prompts = buildAiPrompts(p, { structureId: 'st-2', datasetIds: ['ds-2'] });
+    expect([...prompts[0]!.sources.values()].every((s) => s.datasetId === 'ds-2')).toBe(true);
+  });
+});

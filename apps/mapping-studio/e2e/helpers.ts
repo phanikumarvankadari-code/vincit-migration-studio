@@ -95,7 +95,7 @@ export async function loadTargetText(page: Page, text: string): Promise<void> {
   await page.getByRole('button', { name: 'Create target manually' }).click();
   await page.getByLabel('Target definition').fill(text);
   await page.getByRole('button', { name: 'Use this target' }).click();
-  await expect(page.getByTestId('structure-Profit Center')).toBeVisible();
+  await expect(page.getByTestId(/^structure-/).first()).toBeVisible();
 }
 
 /** Small sources and small target, then the Map stage. */
