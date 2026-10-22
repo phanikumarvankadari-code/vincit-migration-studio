@@ -22,6 +22,8 @@ A folder chosen with the browser's folder picker (Chrome, Edge). Browser storage
 7. Conflict: saving checks the revision in `object.json`. If it moved on, a dialog asks: **Load their version** (the unsaved version is first kept as `project.conflict-<time>.mms.json` next to it) or **Keep mine and overwrite**. The same dialog appears when the page becomes visible again and the revision on disk has changed. Nothing is overwritten before the user chooses.
 8. Saves are queued one after another, each using the revision left by the one before.
 
+9. **Open an existing workspace:** "Open workspace from OneDrive folder" (first-run page, All customers, the storage dialog) opens a workspace that is already there, with all its customers, and lands on All customers. The chosen folder may be the workspace itself or the folder that contains the "Migration Mapping Studio" folder. It never creates a workspace and never writes: an empty folder or one without a workspace is refused with a message saying so. The folder is remembered like any chosen folder. In single-project mode a link leads to the customer workspace.
+
 ## Acceptance Criteria
 - AC-1 Input paths: names are made safe and keep their extension; only csv/xlsx files directly in `sources/` are listed.
 - AC-2 A folder with other files is never written into except its own subfolder; an empty folder and an existing workspace are used directly.
@@ -30,6 +32,7 @@ A folder chosen with the browser's folder picker (Chrome, Edge). Browser storage
 - AC-5 Browser: a change made on disk opens the dialog on the next save; both choices work and Load theirs keeps a copy of the unsaved version.
 - AC-6 Browser: permission needed again shows Reconnect, and reconnecting restores the customers.
 - AC-7 Browser: switching to browser storage and back works.
+- AC-8 Browser: opening an existing workspace (the folder itself, or its parent) loads every customer and writes nothing; an empty or foreign folder is refused; closing the picker changes nothing.
 
 ## Error Behavior
 A folder that cannot be opened or written shows its message and keeps the previous workspace.

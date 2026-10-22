@@ -110,6 +110,10 @@ export interface WorkspaceApi {
   /** `chosen` is false when the person closed the picker without choosing. */
   chooseFolder: () => Promise<{ ok: true; chosen: boolean } | { ok: false; message: string }>;
   reconnectFolder: () => Promise<Result>;
+  /** Opens a workspace that already exists in a OneDrive folder (all its customers); never creates one. */
+  openWorkspaceFolder: () => Promise<
+    { ok: true; chosen: boolean } | { ok: false; message: string }
+  >;
   /** Copies the selected customer from browser storage into a chosen OneDrive folder, archives the browser copy and switches to the folder. */
   /** Customers still kept in browser storage while a folder is the workspace. */
   browserCustomerCount: number;
@@ -331,13 +335,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const prepareRoot = useCallback(
     async (
       root: FileSystemDirectoryHandle,
+      existingOnly = false,
     ): Promise<{ ok: true; ctx: StoreContext } | { ok: false; message: string }> => {
       let port = handlePort(root);
       let kind = await inspectRoot(port);
       if (kind === 'customer' || kind === 'object') {
         return { ok: false, message: wrongFolderMessage(kind) };
       }
-      if (kind === 'other') {
+      if (existingOnly) {
+        // Opening a workspace that is already there: this folder, or the "Migration Mapping Studio" folder inside it.
+        if (kind !== 'workspace') {
+          let inner: FileSystemDirectoryHandle | undefined;
+          try {
+            inner = await root.getDirectoryHandle('Migration Mapping Studio');
+          } catch {
+            inner = undefined;
+          }
+          if (inner && (await inspectRoot(handlePort(inner))) === 'workspace') {
+            port = handlePort(inner);
+            kind = 'workspace';
+          }
+        }
+        if (kind !== 'workspace')
+          return {
+            ok: false,
+            message:
+              kind === 'empty'
+                ? 'There is no workspace in that folder. To start a new one, create a customer and choose the folder there.'
+                : 'No workspace was found in that folder or in its "Migration Mapping Studio" folder.',
+          };
+      } else if (kind === 'other') {
         // A folder that already holds other files (for example the OneDrive top folder): keep to a folder of our own inside it.
         const sub = await root.getDirectoryHandle('Migration Mapping Studio', { create: true });
         port = handlePort(sub);
@@ -358,8 +385,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   /** Makes `root` the workspace: creates or checks its marker, then loads the customers. */
   const connectTo = useCallback(
-    async (root: FileSystemDirectoryHandle, conn: Connection): Promise<Result> => {
-      const prepared = await prepareRoot(root);
+    async (
+      root: FileSystemDirectoryHandle,
+      conn: Connection,
+      existingOnly = false,
+    ): Promise<Result> => {
+      const prepared = await prepareRoot(root, existingOnly);
       if (!prepared.ok) return prepared;
       ctxRef.current = prepared.ctx;
       setConnection(conn);
@@ -411,8 +442,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       root: FileSystemDirectoryHandle,
       conn: Connection,
       remember_: boolean,
+      existingOnly = false,
     ): Promise<Result> => {
-      const r = await connectTo(root, conn);
+      const r = await connectTo(root, conn, existingOnly);
       if (!r.ok) return r;
       if (remember_ && conn.kind === 'folder') {
         await saveFolderHandle(root);
@@ -518,6 +550,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return {
             ok: false,
+            message: e instanceof Error ? e.message : 'The folder could not be opened.',
+          };
+        }
+      },
+      openWorkspaceFolder: async () => {
+        try {
+          const picked = await pickFolder();
+          if (!picked) return { ok: true as const, chosen: false };
+          const r = await switchTo(picked, { kind: 'folder', name: picked.name }, true, true);
+          return r.ok ? { ok: true as const, chosen: true } : r;
+        } catch (e) {
+          return {
+            ok: false as const,
             message: e instanceof Error ? e.message : 'The folder could not be opened.',
           };
         }

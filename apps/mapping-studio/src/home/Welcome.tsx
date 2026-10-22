@@ -1,7 +1,7 @@
-import { Button, Input, MessageBar, MessageBarBody } from '@fluentui/react-components';
+import { Button, Input, MessageBar, MessageBarBody, Text } from '@fluentui/react-components';
 import { useState } from 'react';
 import { useWorkspace } from '../workspace';
-import { BrowserCustomersBanner, Page, TopBar } from './shared';
+import { BrowserCustomersBanner, OpenWorkspaceButton, Page, TopBar } from './shared';
 
 const STEPS = [
   ['1', 'Add a customer', 'The migration engagement that everything below belongs to.'],
@@ -282,6 +282,25 @@ export function Welcome() {
           <Button appearance="primary" size="large" onClick={() => void submit()}>
             {where === 'folder' ? 'Choose folder and create customer' : 'Create customer'}
           </Button>
+          <div
+            style={{
+              borderTop: '1px solid var(--line)',
+              paddingTop: 18,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+            data-testid="open-existing"
+          >
+            <Text weight="semibold">Already have a workspace in OneDrive?</Text>
+            <Text size={200} className="mms-muted">
+              Open the folder that holds your customers. Everything in it loads, and you land on All
+              customers.
+            </Text>
+            <div>
+              <OpenWorkspaceButton onMessage={setMessage} />
+            </div>
+          </div>
           <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
             The application does not sign in to Microsoft and never deletes your files. Removed
             items are moved to an archive folder.

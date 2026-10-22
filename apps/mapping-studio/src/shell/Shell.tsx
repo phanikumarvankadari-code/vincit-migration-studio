@@ -188,7 +188,10 @@ export function Shell() {
             </nav>
           ) : (
             <Text size={200} className="mms-muted">
-              Single project
+              Single project ·{' '}
+              <a href="/" data-testid="go-to-workspace" style={{ color: 'var(--brand)' }}>
+                Go to the customer workspace
+              </a>
             </Text>
           )}
           {editing ? (

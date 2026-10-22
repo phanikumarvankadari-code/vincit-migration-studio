@@ -19,3 +19,7 @@ Browser tests: `apps/mapping-studio/e2e/onedrive-folder.spec.ts`. The folder pic
 - AC-7 switching between browser storage and the folder
 
 Not testable in CI: the real OneDrive sync. Manual check: choose the real OneDrive folder, create a customer and object, confirm the files appear in OneDrive.
+
+## Added later: open an existing workspace
+
+`e2e/onedrive-folder.spec.ts` covers AC-8: Open workspace from OneDrive folder from the first-run page, All customers and the storage dialog; the workspace itself or its parent folder; empty and foreign folders refused with nothing written; closing the picker; the folder remembered; the link from single-project mode.

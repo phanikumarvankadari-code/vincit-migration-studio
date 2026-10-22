@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  addCustomer,
   addObject,
   addSmallSources,
   createFirstCustomer,
   fixture,
   goToStage,
   loadSmallTarget,
+  openApp,
   openHome,
   openObjectFromRow,
 } from './helpers';
@@ -78,6 +80,20 @@ const readDisk = (page: Page, path: string) =>
   );
 
 /** First run, choosing a OneDrive folder, creating the first customer in it. */
+/** Makes the browser forget the chosen folder, as on a new computer: the folder itself is left as it is. */
+async function forgetFolder(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        localStorage.removeItem('mms:lastOpen');
+        const r = indexedDB.deleteDatabase('mms');
+        r.onsuccess = r.onerror = r.onblocked = () => resolve();
+      }),
+  );
+  await page.reload();
+  await expect(page.getByTestId('home')).toBeVisible();
+}
+
 async function setUpFolder(page: Page, customer = 'Acme Oy'): Promise<void> {
   await installPicker(page);
   await openHome(page);
@@ -376,5 +392,104 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     await expect(page.getByTestId('stage-target-summary')).toHaveText('2 structures, 6 fields');
     await goToStage(page, 'sources');
     await expect(page.getByTestId('dataset-CEPC')).toContainText(/\d+ rows/);
+  });
+
+  test('Open workspace from OneDrive folder loads every customer of an existing workspace and lands on All customers', async ({
+    page,
+  }) => {
+    await setUpFolder(page, 'Acme Oy');
+    await addObject(page, 'Profit Center');
+    await page.getByRole('button', { name: 'All customers' }).click();
+    await addCustomer(page, 'Beta Ab');
+    // a new computer: the browser knows nothing about the folder
+    await forgetFolder(page);
+    await expect(page.getByTestId('storage-label')).toContainText('This browser');
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+    await expect(page.getByTestId('customer-Acme Oy')).toContainText('1 business object');
+    await expect(page.getByTestId('customer-Beta Ab')).toBeVisible();
+    await page.getByTestId('customer-Acme Oy').click();
+    await expect(page.getByTestId('object-Profit Center')).toBeVisible();
+    // the folder is remembered from now on
+    await page.reload();
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+  });
+
+  test('choosing the folder that contains the Migration Mapping Studio folder opens the workspace inside it', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await writeDisk(page, 'holiday.jpg', 'not a workspace file');
+    await page.getByLabel('Customer name').fill('Acme Oy');
+    await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
+    await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
+    const before = await disk(page);
+    await forgetFolder(page);
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('customer-Acme Oy')).toBeVisible();
+    expect(await disk(page)).toEqual(before); // nothing was written
+  });
+
+  test('a folder with no workspace in it is refused with a clear message and nothing is created', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('home-message')).toContainText(
+      'There is no workspace in that folder',
+    );
+    expect(await disk(page)).toEqual([]);
+    await writeDisk(page, 'holiday.jpg', 'x');
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('home-message')).toContainText('No workspace was found');
+    expect(await disk(page)).toEqual(['holiday.jpg']);
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+  });
+
+  test('closing the picker changes nothing', async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => {
+        throw new DOMException('cancelled', 'AbortError');
+      };
+    });
+    await openHome(page);
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('home-message')).toHaveCount(0);
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+  });
+
+  test('from All customers, a workspace in a OneDrive folder can be opened instead of the browser one', async ({
+    page,
+  }) => {
+    await setUpFolder(page, 'Folder Customer');
+    await forgetFolder(page);
+    await createFirstCustomer(page, 'Browser Customer');
+    await page.getByRole('button', { name: 'All customers' }).click();
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('customer-Folder Customer')).toBeVisible();
+    await expect(page.getByTestId('customer-Browser Customer')).toHaveCount(0);
+    // the customer left in the browser is still offered a move
+    await expect(page.getByTestId('browser-customers-banner')).toContainText(
+      '1 customer is still kept in this browser',
+    );
+  });
+
+  test('the storage dialog offers Open existing workspace', async ({ page }) => {
+    await setUpFolder(page, 'Acme Oy');
+    await forgetFolder(page);
+    await page.getByTestId('storage-label').click();
+    await page.getByTestId('storage-open-workspace').click();
+    await expect(page.getByTestId('customer-Acme Oy')).toBeVisible();
+  });
+
+  test('in single-project mode there is a way to the customer workspace', async ({ page }) => {
+    await openApp(page);
+    await page.getByTestId('go-to-workspace').click();
+    await expect(page.getByTestId('home')).toBeVisible();
+    await expect(page.getByText('Create your first customer')).toBeVisible();
   });
 });
