@@ -3,12 +3,15 @@ import {
   BusinessObjectSchema,
   CUSTOMER_FILE,
   CustomerSchema,
+  DICTIONARY_DIR,
   OBJECT_FILE,
   PROJECT_FILE,
   ROOT_FORMAT,
   ROOT_MANIFEST,
   ROOT_VERSION,
   RootManifestSchema,
+  SOURCES_DIR,
+  TARGET_DIR,
   type BusinessObject,
   type Customer,
   type CustomerEntry,
@@ -17,7 +20,7 @@ import {
   type Outcome,
   type StoreContext,
 } from './types.js';
-import { safeName, stamp, uniqueName } from './names.js';
+import { safeFileName, safeName, stamp, uniqueName } from './names.js';
 
 const fail = (message: string): { ok: false; message: string } => ({ ok: false, message });
 
@@ -43,30 +46,32 @@ const readObject = (port: FilePort, c: string, o: string) =>
 
 const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 
+export type RootKind = 'empty' | 'workspace' | 'other';
+
+/** What a chosen folder is: empty, already a workspace, or something else that must not be written into. */
+export async function inspectRoot(port: FilePort): Promise<RootKind> {
+  const text = await port.readText([ROOT_MANIFEST]);
+  if (text === undefined) return (await port.list([])).length === 0 ? 'empty' : 'other';
+  try {
+    return RootManifestSchema.safeParse(JSON.parse(text)).success ? 'workspace' : 'other';
+  } catch {
+    return 'other';
+  }
+}
+
 /** Creates the workspace marker on first use. A folder that already has another kind of marker is refused. */
 export async function openWorkspace(ctx: StoreContext): Promise<Outcome<{ created: boolean }>> {
-  const text = await ctx.port.readText([ROOT_MANIFEST]);
-  if (text === undefined) {
-    const entries = await ctx.port.list([]);
-    if (entries.length > 0)
-      return fail(
-        'This folder already has other files in it and is not a Migration Mapping Studio workspace. Choose an empty folder.',
-      );
-    await ctx.port.writeText(
-      [ROOT_MANIFEST],
-      json({ format: ROOT_FORMAT, schemaVersion: ROOT_VERSION, createdAt: ctx.now() }),
+  const kind = await inspectRoot(ctx.port);
+  if (kind === 'workspace') return { ok: true, value: { created: false } };
+  if (kind === 'other')
+    return fail(
+      'This folder already has other files in it and is not a Migration Mapping Studio workspace.',
     );
-    return { ok: true, value: { created: true } };
-  }
-  try {
-    if (RootManifestSchema.safeParse(JSON.parse(text)).success)
-      return { ok: true, value: { created: false } };
-  } catch {
-    /* falls through to the refusal */
-  }
-  return fail(
-    'This folder is not a Migration Mapping Studio workspace (or is from a newer version).',
+  await ctx.port.writeText(
+    [ROOT_MANIFEST],
+    json({ format: ROOT_FORMAT, schemaVersion: ROOT_VERSION, createdAt: ctx.now() }),
   );
+  return { ok: true, value: { created: true } };
 }
 
 export async function listCustomers(port: FilePort): Promise<CustomerEntry[]> {
@@ -107,6 +112,28 @@ export async function listObjects(port: FilePort, customerFolder: string): Promi
     out.push({ folder: e.name, object, hasProject });
   }
   return out.sort((a, b) => a.object.name.localeCompare(b.object.name));
+}
+
+/** Path of an input file kept with an object: sources, target or dictionary. */
+export function inputPath(
+  customerFolder: string,
+  objectFolder: string,
+  dir: typeof SOURCES_DIR | typeof TARGET_DIR | typeof DICTIONARY_DIR,
+  fileName: string,
+): string[] {
+  return [customerFolder, objectFolder, dir, safeFileName(fileName)];
+}
+
+/** Names of the files directly inside an object's `sources` folder (subfolders are ignored). */
+export async function listSourceFiles(
+  port: FilePort,
+  customerFolder: string,
+  objectFolder: string,
+): Promise<string[]> {
+  return (await port.list([customerFolder, objectFolder, SOURCES_DIR]))
+    .filter((e) => e.kind === 'file' && /\.(csv|xlsx)$/i.test(e.name))
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b));
 }
 
 /** Creates a business object folder. `projectText` is the first project.mms.json, when there is one. */

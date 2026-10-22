@@ -60,3 +60,20 @@ export function stamp(iso: string): string {
     .replace(/[-:]/g, '')
     .replace('T', '-');
 }
+
+/** A file name safe on every file system that keeps its extension ("con.csv" stays a .csv). */
+export function safeFileName(name: string): string {
+  const base = name.replace(/^.*[\\/]/, '');
+  const dot = base.lastIndexOf('.');
+  const ext =
+    dot > 0
+      ? base
+          .slice(dot)
+          .replace(/[^A-Za-z0-9.]/g, '')
+          .slice(0, 12)
+      : '';
+  const cleanExt = /[A-Za-z0-9]/.test(ext) ? ext : '';
+  const stem = safeName(dot > 0 ? base.slice(0, dot) : base);
+  const safeStem = RESERVED.has(stem.toLowerCase()) ? `${stem}_` : stem;
+  return `${safeStem}${cleanExt}`;
+}

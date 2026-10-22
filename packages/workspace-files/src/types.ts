@@ -9,6 +9,7 @@ export const ARCHIVE_DIR = '_archive';
 export const SOURCES_DIR = 'sources';
 export const TARGET_DIR = 'target';
 export const OUTPUT_DIR = 'output';
+export const DICTIONARY_DIR = 'dictionary';
 
 export const ROOT_FORMAT = 'mms.root';
 export const ROOT_VERSION = 1;

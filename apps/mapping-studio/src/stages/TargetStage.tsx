@@ -32,6 +32,7 @@ import { useMemo, useState } from 'react';
 import { FileButton, Section } from '../components/common';
 import { useStudio } from '../context';
 import { stripExtension } from '../lib/files';
+import { useOptionalWorkspace } from '../workspace';
 
 const useStyles = makeStyles({
   card: {
@@ -72,6 +73,7 @@ const MANUAL_TEMPLATE =
 export function TargetStage() {
   const s = useStyles();
   const { state, send, setStage } = useStudio();
+  const ws = useOptionalWorkspace();
   const target = state.project.targetDefinition;
   const [file, setFile] = useState<TargetFile | undefined>();
   const [headerRow, setHeaderRow] = useState(1);
@@ -94,6 +96,7 @@ export function TargetStage() {
 
   const loadFile = async (files: File[]) => {
     const f = files[0]!;
+    void ws?.saveInput('target', f);
     const isCsv = f.name.toLowerCase().endsWith('.csv');
     const tf: TargetFile = {
       name: f.name,

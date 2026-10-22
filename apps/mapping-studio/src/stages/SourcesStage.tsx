@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { FileButton, Notices, Section, SeverityBadge } from '../components/common';
 import { datasetsWithoutData } from '@mms/studio-model';
 import { useStudio } from '../context';
+import { useOptionalWorkspace } from '../workspace';
 import { notice, readDictionaryFile, readSourceFiles, type Notice } from '../lib/files';
 
 const useStyles = makeStyles({
@@ -41,22 +42,40 @@ const pct = (n: number): string => `${Number.isInteger(n) ? n : n.toFixed(2)}%`;
 export function SourcesStage() {
   const s = useStyles();
   const { state, send, profiles } = useStudio();
+  const ws = useOptionalWorkspace();
   const [notices, setNotices] = useState<Notice[]>([]);
   const sources = state.project.sourceDefinitions;
   const rels = state.project.mappingDefinition.relationships;
   const missing = datasetsWithoutData(state);
 
+  // With a workspace, every file the user adds is also copied into the object's folder.
+  const keep = async (files: File[], kind: 'sources' | 'dictionary') => {
+    if (!ws) return;
+    for (const f of files) {
+      if (kind === 'sources' && !/\.(csv|xlsx)$/i.test(f.name)) continue;
+      const r = await ws.saveInput(kind, f);
+      if (!r.ok)
+        setNotices((cur) => [
+          ...cur,
+          notice('warning', `"${f.name}" was not copied into the workspace folder: ${r.message}`),
+        ]);
+    }
+  };
+
   const addFiles = async (files: File[]) => {
+    void keep(files, 'sources');
     const { imported, notices: n } = await readSourceFiles(files);
     setNotices((cur) => [...cur, ...n]);
     for (const i of imported) send({ type: 'sourceAdded', imported: i });
   };
   const attachRows = async (files: File[]) => {
+    void keep(files, 'sources');
     const { imported, notices: n } = await readSourceFiles(files);
     setNotices((cur) => [...cur, ...n]);
     for (const i of imported) send({ type: 'rowsAttached', imported: i });
   };
   const addDictionary = async (files: File[]) => {
+    void keep(files.slice(0, 1), 'dictionary');
     const r = await readDictionaryFile(files[0]!);
     if ('error' in r) setNotices((cur) => [...cur, notice('error', r.error)]);
     else send({ type: 'dictionaryLoaded', dictionary: r.dictionary, diagnostics: r.diagnostics });

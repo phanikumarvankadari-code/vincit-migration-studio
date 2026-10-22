@@ -166,13 +166,31 @@ export function Home() {
             {customer ? customer.name : 'Customers'}
           </Text>
         </div>
-        <Text
-          size={200}
-          style={{ marginLeft: 'auto', color: 'inherit' }}
-          data-testid="storage-label"
-        >
-          Files kept in: {ws.storageLabel}
-        </Text>
+        <div className={s.row} style={{ marginLeft: 'auto', alignItems: 'center' }}>
+          <Text size={200} style={{ color: 'inherit' }} data-testid="storage-label">
+            Files kept in: {ws.storageLabel}
+          </Text>
+          {ws.canChooseFolder && (
+            <Button
+              size="small"
+              appearance="outline"
+              style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+              onClick={() => void run(ws.chooseFolder())}
+            >
+              Choose OneDrive folder
+            </Button>
+          )}
+          {ws.connection.kind !== 'browser' && (
+            <Button
+              size="small"
+              appearance="outline"
+              style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
+              onClick={() => void run(ws.useBrowserStorage())}
+            >
+              Use browser storage
+            </Button>
+          )}
+        </div>
       </header>
       <div className={s.body}>
         {ws.phase === 'error' && (
@@ -186,7 +204,25 @@ export function Home() {
           </MessageBar>
         )}
 
-        {ws.customers.length === 0 ? (
+        {ws.connection.kind === 'needsPermission' ? (
+          <div className={s.box} data-testid="reconnect">
+            <Text size={500} weight="semibold">
+              Reconnect your folder
+            </Text>
+            <Text className={s.muted}>
+              The browser needs your permission again to use the folder “{ws.connection.name}”. Your
+              files in it are untouched.
+            </Text>
+            <div className={s.row}>
+              <Button appearance="primary" onClick={() => void run(ws.reconnectFolder())}>
+                Reconnect folder
+              </Button>
+              <Button onClick={() => void run(ws.useBrowserStorage())}>
+                Use browser storage instead
+              </Button>
+            </div>
+          </div>
+        ) : ws.customers.length === 0 ? (
           <div className={s.box}>
             <Text size={500} weight="semibold">
               Create your first customer
@@ -222,40 +258,42 @@ export function Home() {
           </div>
         )}
 
-        <div className={s.box}>
-          <Text weight="semibold">
-            {ws.customers.length === 0 ? 'New customer' : 'Add a customer'}
-          </Text>
-          <div className={s.row}>
-            <label>
-              <Text block>Customer name</Text>
-              <Input
-                aria-label="Customer name"
-                value={customerName}
-                onChange={(_, d) => setCustomerName(d.value)}
-              />
-            </label>
-            <label>
-              <Text block>Notes (optional)</Text>
-              <Input
-                aria-label="Customer notes"
-                value={customerNotes}
-                onChange={(_, d) => setCustomerNotes(d.value)}
-              />
-            </label>
-            <Button
-              appearance={ws.customers.length === 0 ? 'primary' : 'secondary'}
-              onClick={async () => {
-                if (await run(ws.addCustomer(customerName, customerNotes))) {
-                  setCustomerName('');
-                  setCustomerNotes('');
-                }
-              }}
-            >
-              Create customer
-            </Button>
+        {ws.connection.kind !== 'needsPermission' && (
+          <div className={s.box}>
+            <Text weight="semibold">
+              {ws.customers.length === 0 ? 'New customer' : 'Add a customer'}
+            </Text>
+            <div className={s.row}>
+              <label>
+                <Text block>Customer name</Text>
+                <Input
+                  aria-label="Customer name"
+                  value={customerName}
+                  onChange={(_, d) => setCustomerName(d.value)}
+                />
+              </label>
+              <label>
+                <Text block>Notes (optional)</Text>
+                <Input
+                  aria-label="Customer notes"
+                  value={customerNotes}
+                  onChange={(_, d) => setCustomerNotes(d.value)}
+                />
+              </label>
+              <Button
+                appearance={ws.customers.length === 0 ? 'primary' : 'secondary'}
+                onClick={async () => {
+                  if (await run(ws.addCustomer(customerName, customerNotes))) {
+                    setCustomerName('');
+                    setCustomerNotes('');
+                  }
+                }}
+              >
+                Create customer
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
 
         {customer && (
           <>
