@@ -8,6 +8,7 @@ import {
   PROJECT_FILE,
   ROOT_FORMAT,
   ROOT_MANIFEST,
+  OUTPUT_DIR,
   ROOT_VERSION,
   RootManifestSchema,
   SOURCES_DIR,
@@ -20,7 +21,14 @@ import {
   type Outcome,
   type StoreContext,
 } from './types.js';
-import { safeFileName, safeName, stamp, uniqueName } from './names.js';
+import {
+  runFolderName,
+  safeFileName,
+  safeName,
+  stamp,
+  uniqueFileName,
+  uniqueName,
+} from './names.js';
 
 const fail = (message: string): { ok: false; message: string } => ({ ok: false, message });
 
@@ -241,4 +249,52 @@ export async function archive(
   }
   await ctx.port.remove(path);
   return { ok: true, value: { archivedAs } };
+}
+
+export interface RunEntry {
+  /** Folder name under `output/`. */
+  folder: string;
+  files: number;
+}
+
+/** The runs saved for an object, newest first (folder names start with their time). */
+export async function listRuns(
+  port: FilePort,
+  customerFolder: string,
+  objectFolder: string,
+): Promise<RunEntry[]> {
+  const out: RunEntry[] = [];
+  for (const e of await port.list([customerFolder, objectFolder, OUTPUT_DIR])) {
+    if (e.kind !== 'dir') continue;
+    const files = (await port.list([customerFolder, objectFolder, OUTPUT_DIR, e.name])).filter(
+      (f) => f.kind === 'file',
+    ).length;
+    out.push({ folder: e.name, files });
+  }
+  return out.sort((a, b) => b.folder.localeCompare(a.folder));
+}
+
+/**
+ * Writes the files of one run into a new folder under `output/`. A folder that exists is never reused, so an
+ * earlier run is never replaced.
+ */
+export async function saveRunOutput(
+  ctx: StoreContext,
+  customerFolder: string,
+  objectFolder: string,
+  run: { startedAt: string; snapshotName: string },
+  files: readonly { name: string; bytes: Uint8Array }[],
+): Promise<Outcome<{ folder: string; files: number }>> {
+  if (files.length === 0) return fail('There are no files to save.');
+  const existing = (await ctx.port.list([customerFolder, objectFolder, OUTPUT_DIR])).map(
+    (e) => e.name,
+  );
+  const folder = uniqueName(runFolderName(run.startedAt, run.snapshotName), existing);
+  const used = new Set<string>();
+  for (const f of files) {
+    const name = uniqueFileName(safeFileName(f.name), used);
+    used.add(name);
+    await ctx.port.writeBytes([customerFolder, objectFolder, OUTPUT_DIR, folder, name], f.bytes);
+  }
+  return { ok: true, value: { folder, files: files.length } };
 }

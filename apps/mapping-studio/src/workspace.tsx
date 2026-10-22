@@ -9,7 +9,9 @@ import {
   inspectRoot,
   listCustomers,
   listObjects,
+  listRuns,
   listSourceFiles,
+  saveRunOutput,
   openWorkspace,
   readProject,
   stamp,
@@ -50,6 +52,8 @@ import {
 import { deleteFromLibrary, listProjects, readLibraryText, type LibraryEntry } from './lib/storage';
 
 export interface ObjectCard extends ObjectEntry {
+  /** The newest run saved in the object's output folder. */
+  lastRun: { folder: string; files: number } | undefined;
   summary: ObjectSummary | undefined;
   /** Why the project file could not be read, if it could not. */
   problem: string | undefined;
@@ -83,6 +87,11 @@ export interface WorkspaceApi {
   saveInput: (kind: 'sources' | 'target' | 'dictionary', file: File) => Promise<Result>;
   /** The source files kept with the open object, as files, for re-attaching their rows. */
   readSources: () => Promise<File[]>;
+  /** Saves the files of a run into a new folder under the open object's output folder. */
+  saveOutput: (
+    files: { name: string; bytes: Uint8Array }[],
+    run: { startedAt: string; snapshotName: string },
+  ) => Promise<{ ok: true; path: string; files: number } | { ok: false; message: string }>;
   rowsLoaded: boolean;
   markRowsLoaded: () => void;
   /** The open project was changed elsewhere; the user has to decide. */
@@ -178,8 +187,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     for (const e of entries) {
       const text = e.hasProject ? await readProject(ctx.port, folder, e.folder) : undefined;
       const decoded = text === undefined ? undefined : decodeWorkspace(text);
+      const runs = await listRuns(ctx.port, folder, e.folder);
       out.push({
         ...e,
+        lastRun: runs[0],
         summary: decoded?.ok ? summarizeWorkspace(decoded.value) : undefined,
         problem:
           decoded && !decoded.ok ? decoded.issues.map((i) => i.message).join(' ') : undefined,
@@ -437,6 +448,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return {
             ok: false,
             message: e instanceof Error ? e.message : 'The file was not copied.',
+          };
+        }
+      },
+      saveOutput: async (files, run) => {
+        const ctx = ctxRef.current;
+        const o = openRef.current;
+        if (!ctx || !o) return { ok: false, message: 'No business object is open.' };
+        try {
+          const r = await saveRunOutput(ctx, o.customerFolder, o.objectFolder, run, files);
+          return r.ok
+            ? {
+                ok: true,
+                path: `${o.customerFolder}/${o.objectFolder}/output/${r.value.folder}`,
+                files: r.value.files,
+              }
+            : { ok: false, message: r.message };
+        } catch (e) {
+          return {
+            ok: false,
+            message: e instanceof Error ? e.message : 'The files were not saved.',
           };
         }
       },

@@ -4,7 +4,10 @@ import {
   archive,
   inputPath,
   inspectRoot,
+  listRuns,
   listSourceFiles,
+  runFolderName,
+  saveRunOutput,
   safeFileName,
   createCustomer,
   createObject,
@@ -210,5 +213,67 @@ describe('input files (SPEC-033)', () => {
     const b = setup();
     await b.port.writeText(['photos', 'x.jpg'], 'x');
     expect(await inspectRoot(b.port)).toBe('other');
+  });
+});
+
+describe('run outputs (SPEC-034)', () => {
+  it('AC-1 run folder names sort by time and are safe', () => {
+    const a = runFolderName('2026-10-22T10:05:03.000Z', 'Initial: Mapping/1');
+    const b = runFolderName('2026-10-22T11:00:00.000Z', 'A');
+    expect(a).toBe('20261022-100503_Initial_ Mapping_1');
+    expect([b, a].sort()).toEqual([a, b]);
+  });
+
+  it('AC-2 saves each run into its own folder, lists them newest first, and never reuses a folder', async () => {
+    const { port, ctx } = setup();
+    const bytes = (s: string) => new TextEncoder().encode(s);
+    const run = { startedAt: '2026-10-22T10:05:03.000Z', snapshotName: 'Initial' };
+    const files = [
+      { name: 'Profit Center.csv', bytes: bytes('a') },
+      { name: 'diagnostics.csv', bytes: bytes('b') },
+    ];
+    const first = must(await saveRunOutput(ctx, 'Acme', 'PC', run, files));
+    expect(first).toEqual({ folder: '20261022-100503_Initial', files: 2 });
+    const again = must(await saveRunOutput(ctx, 'Acme', 'PC', run, files));
+    expect(again.folder).toBe('20261022-100503_Initial (2)');
+    const later = must(
+      await saveRunOutput(
+        ctx,
+        'Acme',
+        'PC',
+        { startedAt: '2026-10-22T12:00:00.000Z', snapshotName: 'Initial' },
+        [files[0]!],
+      ),
+    );
+    expect((await listRuns(port, 'Acme', 'PC')).map((r) => [r.folder, r.files])).toEqual([
+      [later.folder, 1],
+      ['20261022-100503_Initial (2)', 2],
+      ['20261022-100503_Initial', 2],
+    ]);
+    expect(await port.readText(['Acme', 'PC', 'output', first.folder, 'Profit Center.csv'])).toBe(
+      'a',
+    );
+    expect((await saveRunOutput(ctx, 'Acme', 'PC', run, [])).ok).toBe(false);
+    expect(await listRuns(port, 'Acme', 'None')).toEqual([]);
+  });
+
+  it('two files with the same name in one run get different names', async () => {
+    const { port, ctx } = setup();
+    const b = new Uint8Array([1]);
+    const r = must(
+      await saveRunOutput(
+        ctx,
+        'Acme',
+        'PC',
+        { startedAt: '2026-10-22T10:00:00.000Z', snapshotName: 'S' },
+        [
+          { name: 'x.csv', bytes: b },
+          { name: 'X.csv', bytes: b },
+        ],
+      ),
+    );
+    expect((await port.list(['Acme', 'PC', 'output', r.folder])).map((e) => e.name).sort()).toEqual(
+      ['X (2).csv'.replace('X (2)', 'X (2)'), 'x.csv'].sort(),
+    );
   });
 });
