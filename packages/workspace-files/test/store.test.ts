@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ARCHIVE_DIR,
   archive,
+  copyBetweenPorts,
+  countFiles,
   inputPath,
   inspectRoot,
   listRuns,
@@ -9,6 +11,7 @@ import {
   runFolderName,
   saveRunOutput,
   safeFileName,
+  wrongFolderMessage,
   createCustomer,
   createObject,
   listCustomers,
@@ -275,5 +278,44 @@ describe('run outputs (SPEC-034)', () => {
     expect((await port.list(['Acme', 'PC', 'output', r.folder])).map((e) => e.name).sort()).toEqual(
       ['X (2).csv'.replace('X (2)', 'X (2)'), 'x.csv'].sort(),
     );
+  });
+});
+
+describe('copy between storage places (move a customer to OneDrive)', () => {
+  it('copies a whole customer with its files to another port and leaves the source alone', async () => {
+    const a = setup();
+    await openWorkspace(a.ctx);
+    const c = must(await createCustomer(a.ctx, 'Acme'));
+    const o = must(await createObject(a.ctx, c.folder, { name: 'PC', entity: 'PC' }, 'project'));
+    await a.port.writeBytes([c.folder, o.folder, 'sources', 'CEPC.csv'], new Uint8Array([1, 2, 3]));
+    await a.port.writeBytes([c.folder, o.folder, 'output', 'run1', 'x.csv'], new Uint8Array([9]));
+    const b = setup();
+    const n = await copyBetweenPorts(a.port, [c.folder], b.port, ['Acme (moved)']);
+    expect(n).toBe(5);
+    expect(await countFiles(b.port, ['Acme (moved)'])).toBe(await countFiles(a.port, [c.folder]));
+    expect(
+      Array.from((await b.port.readBytes(['Acme (moved)', 'PC', 'sources', 'CEPC.csv']))!),
+    ).toEqual([1, 2, 3]);
+    expect(await a.port.readText([c.folder, 'customer.json'])).toContain('Acme');
+    expect(await copyBetweenPorts(a.port, ['Nobody'], b.port, ['x'])).toBe(0);
+  });
+});
+
+describe('choosing the wrong folder', () => {
+  it('recognises a customer folder and a business-object folder and does not treat them as foreign files', async () => {
+    const c = setup();
+    await c.port.writeText(['customer.json'], '{}');
+    await c.port.writeText(['Profit Center', 'object.json'], '{}');
+    expect(await inspectRoot(c.port)).toBe('customer');
+    const o = setup();
+    await o.port.writeText(['object.json'], '{}');
+    await o.port.writeText(['project.mms.json'], '{}');
+    expect(await inspectRoot(o.port)).toBe('object');
+    expect(await openWorkspace(o.ctx)).toMatchObject({
+      ok: false,
+      message: wrongFolderMessage('object'),
+    });
+    expect(wrongFolderMessage('customer')).toContain('Choose the folder that contains it');
+    expect([...o.port.files.keys()].sort()).toEqual(['object.json', 'project.mms.json']);
   });
 });

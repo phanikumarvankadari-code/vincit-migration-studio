@@ -9,6 +9,9 @@ export interface ObjectSummary {
   fields: number;
   mapped: number;
   snapshots: number;
+  /** Required target fields without a mapping. */
+  requiredOpen: number;
+  joinsConfirmed: number;
 }
 
 export function summarizeWorkspace(ws: Workspace): ObjectSummary {
@@ -21,5 +24,9 @@ export function summarizeWorkspace(ws: Workspace): ObjectSummary {
     fields: completeness.reduce((n, c) => n + c.totalFields, 0),
     mapped: completeness.reduce((n, c) => n + c.mappedFields, 0),
     snapshots: ws.snapshots.length,
+    requiredOpen: completeness.reduce((n, c) => n + c.unmappedRequired.length, 0),
+    joinsConfirmed: ws.project.mappingDefinition.relationships.filter(
+      (r) => r.status === 'confirmed',
+    ).length,
   };
 }

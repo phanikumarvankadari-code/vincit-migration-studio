@@ -18,6 +18,7 @@ import { STAGES, STAGE_LABELS } from '@mms/studio-model';
 import { useState } from 'react';
 import { FileButton, StageBadge } from '../components/common';
 import { useStudio } from '../context';
+import { Brand } from '../components/brand';
 import { useOptionalWorkspace } from '../workspace';
 import { datasetsWithoutData } from '@mms/studio-model';
 import { deleteFromLibrary, listProjects } from '../lib/storage';
@@ -39,8 +40,10 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: tokens.spacingHorizontalXL,
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalXL}`,
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundColor: 'var(--bg)',
+    color: 'var(--ink)',
+    borderBottom: '1px solid var(--line)',
+    flexWrap: 'wrap',
   },
   headerTitle: { display: 'flex', flexDirection: 'column' },
   headerFacts: {
@@ -142,22 +145,51 @@ export function Shell() {
   return (
     <div className={s.app}>
       <header className={s.header}>
+        <Brand size={36} />
         <div className={s.headerTitle}>
           {inWorkspace && workspace?.open ? (
-            <Text size={200} data-testid="breadcrumb">
-              <Button
-                appearance="transparent"
-                size="small"
-                style={{ color: 'inherit', minWidth: 0, padding: 0 }}
+            <nav
+              aria-label="Breadcrumb"
+              data-testid="breadcrumb"
+              style={{
+                fontSize: 13,
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+                color: 'var(--muted)',
+              }}
+            >
+              <button
+                type="button"
+                className="mms-link"
                 data-testid="back-to-customer"
+                style={{ fontWeight: 600, color: 'var(--brand)' }}
                 onClick={() => void workspace.closeObject()}
               >
                 ‹ Back
-              </Button>{' '}
-              {workspace.open.customerName} › {workspace.open.object.name}
-            </Text>
+              </button>
+              <span aria-hidden="true">|</span>
+              <button
+                type="button"
+                className="mms-link"
+                style={{ fontWeight: 400, color: 'var(--brand)' }}
+                onClick={() => {
+                  void workspace.closeObject().then(() => workspace.selectCustomer(undefined));
+                }}
+              >
+                All customers
+              </button>
+              <span aria-hidden="true">›</span>
+              <span>{workspace.open.customerName}</span>
+              <span aria-hidden="true">›</span>
+              <span style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                {workspace.open.object.name}
+              </span>
+            </nav>
           ) : (
-            <Text size={200}>Migration Mapping Studio</Text>
+            <Text size={200} className="mms-muted">
+              Single project
+            </Text>
           )}
           {editing ? (
             <div className={s.editRow}>
@@ -191,7 +223,6 @@ export function Shell() {
         {!editing && !inWorkspace && (
           <Button
             appearance="subtle"
-            style={{ color: 'inherit' }}
             onClick={() => {
               setName(state.project.name);
               setEntity(state.project.businessEntity);
@@ -207,7 +238,6 @@ export function Shell() {
               <Button
                 size="small"
                 appearance="outline"
-                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
                 onClick={() => {
                   setReloadAfter(false);
                   if (hasWork) setConfirmNew(true);
@@ -219,7 +249,6 @@ export function Shell() {
               <Button
                 size="small"
                 appearance="outline"
-                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
                 title="Start a new project and refresh the whole screen"
                 onClick={() => {
                   setReloadAfter(true);
@@ -229,22 +258,12 @@ export function Shell() {
               >
                 Fresh start
               </Button>
-              <Button
-                size="small"
-                appearance="outline"
-                style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-                onClick={() => setShowProjects(true)}
-              >
+              <Button size="small" appearance="outline" onClick={() => setShowProjects(true)}>
                 Projects
               </Button>
             </>
           )}
-          <Button
-            size="small"
-            appearance="outline"
-            style={{ color: 'inherit', borderColor: 'rgba(255,255,255,0.6)' }}
-            onClick={saveProjectFile}
-          >
+          <Button size="small" appearance="outline" onClick={saveProjectFile}>
             Save project file
           </Button>
           <FileButton

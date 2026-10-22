@@ -69,6 +69,8 @@ describe('M12 customer workspace with business objects', () => {
       fields: 0,
       mapped: 0,
       snapshots: 0,
+      requiredOpen: 0,
+      joinsConfirmed: 0,
     });
     const saved = await writeProject(ctx, acme, 'Profit Center', text, 0);
     expect(saved).toEqual({ ok: true, value: { revision: 1 } });

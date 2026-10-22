@@ -1,4 +1,5 @@
-import { FluentProvider, webLightTheme } from '@fluentui/react-components';
+import { FluentProvider } from '@fluentui/react-components';
+import { vincitTheme } from './theme';
 import { useEffect } from 'react';
 import { StudioProvider, useStudio } from './context';
 import { readSourceFiles } from './lib/files';
@@ -41,6 +42,7 @@ function Workspaces() {
       initial={ws.open.workspace}
       persist={ws.persist}
       registerFlush={ws.registerFlush}
+      initialStage={ws.open.stage}
     >
       <Reattach />
       <Shell />
@@ -50,7 +52,7 @@ function Workspaces() {
 
 export function App() {
   return (
-    <FluentProvider theme={webLightTheme} style={{ height: '100%' }}>
+    <FluentProvider theme={vincitTheme} style={{ height: '100%' }}>
       {classic() ? (
         <StudioProvider>
           <Shell />

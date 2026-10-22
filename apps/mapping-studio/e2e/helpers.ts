@@ -189,3 +189,56 @@ export async function confirmJoin(page: Page): Promise<void> {
     .getByRole('button', { name: 'Confirm join' })
     .click();
 }
+
+// ---- Workspace pages (customers, business objects) ----
+
+/** Opens the application at its main page. */
+export async function openHome(page: Page): Promise<void> {
+  await page.goto('/');
+  await expect(page.getByTestId('home')).toBeVisible();
+}
+
+/** First run: creates the first customer, keeping files in this browser. */
+export async function createFirstCustomer(page: Page, name: string): Promise<void> {
+  await expect(page.getByText('Create your first customer')).toBeVisible();
+  await page.getByLabel('Customer name').fill(name);
+  await page.getByText('This browser only').click();
+  await page.getByRole('button', { name: 'Create customer' }).click();
+  await expect(page.getByTestId('home-title')).toHaveText(name);
+}
+
+/** On All customers: the New customer dialog. */
+export async function addCustomer(page: Page, name: string, notes = ''): Promise<void> {
+  await page.getByRole('button', { name: 'New customer' }).click();
+  await page.getByLabel('Customer name').fill(name);
+  if (notes) await page.getByLabel('Customer notes').fill(notes);
+  await page.getByRole('button', { name: 'Create customer' }).click();
+  await expect(page.getByTestId('home-title')).toHaveText(name);
+}
+
+/** On a customer home: the Add business object dialog. */
+export async function addObject(page: Page, name: string, entity = ''): Promise<void> {
+  await page.getByRole('button', { name: 'Add business object' }).first().click();
+  await page.getByLabel('Business object name').fill(name);
+  if (entity) await page.getByLabel('Business entity').fill(entity);
+  await page.getByRole('button', { name: 'Create business object' }).click();
+  await expect(page.getByTestId(`object-${name}`)).toBeVisible();
+}
+
+export async function openObjectFromRow(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: `Open ${name}`, exact: true }).click();
+  await expect(page.getByTestId('breadcrumb')).toBeVisible();
+}
+
+/** Fresh browser storage: first customer, one business object, opened on its stages. */
+export async function openWorkspaceObject(
+  page: Page,
+  customer = 'Acme Oy',
+  object = 'Profit Center',
+): Promise<void> {
+  await openHome(page);
+  await createFirstCustomer(page, customer);
+  await addObject(page, object);
+  await openObjectFromRow(page, object);
+  await expect(page.getByTestId('breadcrumb')).toContainText(customer);
+}
