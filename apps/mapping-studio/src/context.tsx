@@ -28,6 +28,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { Workspace } from '@mms/studio-model';
 import {
   MIME,
   clearStored,
@@ -83,7 +84,13 @@ function freshState(): StudioState {
 }
 
 /** The project saved in this browser (without row data), or a new one. */
-function initialState(): { state: StudioState; startup: Stored } {
+function initialState(initial?: Workspace): { state: StudioState; startup: Stored } {
+  if (initial) {
+    return {
+      state: reduce(freshState(), { type: 'workspaceLoaded', workspace: initial }),
+      startup: { kind: 'ok', workspace: initial },
+    };
+  }
   const stored = loadStored();
   if (stored.kind === 'ok') {
     return {
@@ -94,8 +101,23 @@ function initialState(): { state: StudioState; startup: Stored } {
   return { state: freshState(), startup: stored };
 }
 
-export function StudioProvider({ children }: { children: ReactNode }) {
-  const [boot] = useState(initialState);
+/** Saves the project text somewhere other than this browser's single slot (a workspace object folder). */
+export type Persist = (text: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+
+export function StudioProvider({
+  children,
+  initial,
+  persist,
+  registerFlush,
+}: {
+  children: ReactNode;
+  /** The project to start from, when it comes from a workspace. */
+  initial?: Workspace;
+  persist?: Persist;
+  /** Lets the screen above save a pending change before it leaves the project. */
+  registerFlush?: (flush: (() => Promise<void>) | undefined) => void;
+}) {
+  const [boot] = useState(() => initialState(initial));
   const [state, dispatch] = useReducer(reduce, boot.state);
   const [stage, setStage] = useState<Stage>('sources');
   const [startup, setStartup] = useState<Stored>(boot.startup);
@@ -161,11 +183,43 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   // Autosave: the draft, its snapshots and the dictionary (never the row data) are kept in this browser.
   const first = useRef(true);
+  const dirty = useRef(false);
+  const latest = useRef({
+    project: state.project,
+    snapshots: state.snapshots,
+    dictionary: state.dictionary,
+  });
+  useEffect(() => {
+    latest.current = {
+      project: state.project,
+      snapshots: state.snapshots,
+      dictionary: state.dictionary,
+    };
+  });
+  // Back to the customer saves a change that the delay has not saved yet, and waits for it.
+  useEffect(() => {
+    if (!persist || !registerFlush) return;
+    registerFlush(async () => {
+      if (!dirty.current) return;
+      const l = latest.current;
+      await persist(
+        encodeWorkspace({
+          project: l.project,
+          snapshots: [...l.snapshots],
+          dictionary: l.dictionary,
+          savedAt: nowIso(),
+        }),
+      );
+      dirty.current = false;
+    });
+    return () => registerFlush(undefined);
+  }, [persist, registerFlush]);
   useEffect(() => {
     if (first.current) {
       first.current = false;
       if (startup.kind === 'ok') return; // just loaded: nothing new to save
     }
+    dirty.current = true;
     const timer = window.setTimeout(() => {
       const at = nowIso();
       const text = encodeWorkspace({
@@ -174,6 +228,13 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         dictionary: state.dictionary,
         savedAt: at,
       });
+      if (persist) {
+        void persist(text).then((r) => {
+          if (r.ok) dirty.current = false;
+          setSaveStatus(r.ok ? { state: 'saved', at } : { state: 'error', message: r.message });
+        });
+        return;
+      }
       const result = store(text);
       const hasWork =
         state.project.sourceDefinitions.length > 0 ||

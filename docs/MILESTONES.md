@@ -19,6 +19,9 @@ Each milestone ends with a demo check: something you can run or see.
 | M9 ✅ | Container | 030 container packaging | `docker build` produces an image. `docker run` serves the app on localhost. Projects and files live on a mounted volume. Playwright smoke test passes against the running container. |
 | M10 ✅ | Project library | – | Earlier projects are listed under Projects and can be opened again. The Visual Mapper shows every source field so a link can be drawn at once. |
 | M11 ✅ | Two-panel mapper | 031 | Visual Mapper is a two-panel mapper (sources left, targets right, lines, function boxes). Suggest mappings proposes sources with reasons; the user accepts or rejects. |
+| M12 ✅ | Customer workspace | 032 | Main page is a customer; each business object is an entry with its own project, saved as files in a workspace folder. |
+| M13 | OneDrive folder | 033 | Workspace folder picked from the synced OneDrive folder; sources copied in and re-attached on open; conflict dialog. |
+| M14 | Outputs to the folder | 034 | Full run saved to `output/<run>/` in the object folder, plus zip download. |
 
 ## Decisions already made
 
