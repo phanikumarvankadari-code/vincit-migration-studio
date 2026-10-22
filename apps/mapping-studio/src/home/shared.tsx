@@ -375,3 +375,67 @@ export function OpenWorkspaceButton({
     </Button>
   );
 }
+
+/** What happened when a folder was opened: always something visible, never silence. */
+export function WorkspaceNoticeBar() {
+  const ws = useWorkspace();
+  if (ws.opening)
+    return (
+      <MessageBar intent="info" data-testid="workspace-opening">
+        <MessageBarBody>Opening the workspace…</MessageBarBody>
+      </MessageBar>
+    );
+  if (!ws.notice) return null;
+  return (
+    <MessageBar intent={ws.notice.intent} data-testid="workspace-notice">
+      <MessageBarBody>{ws.notice.text}</MessageBarBody>
+      <Button size="small" appearance="transparent" onClick={ws.dismissNotice}>
+        Dismiss
+      </Button>
+    </MessageBar>
+  );
+}
+
+/** Several workspaces in the chosen folder: which one? */
+export function WorkspaceChoiceDialog() {
+  const ws = useWorkspace();
+  const c = ws.choice;
+  return (
+    <Dialog
+      open={c !== undefined}
+      onOpenChange={(_, d) => !d.open && ws.answerChoice(undefined)}
+      modalType="alert"
+    >
+      <DialogSurface aria-label="Which workspace?">
+        <DialogBody>
+          <DialogTitle>Which workspace?</DialogTitle>
+          <DialogContent>
+            <Text block style={{ marginBottom: 12 }}>
+              The folder “{c?.folderName}” holds more than one workspace. Choose the one to open.
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {c?.options.map((o) => (
+                <Button
+                  key={o.folder}
+                  data-testid={`choose-workspace-${o.folder}`}
+                  style={{ justifyContent: 'space-between' }}
+                  onClick={() => ws.answerChoice(o.folder)}
+                >
+                  <span>{o.folder}</span>
+                  <span className="mms-muted">
+                    {o.customers === 0
+                      ? 'no customers'
+                      : `${o.customers} ${o.customers === 1 ? 'customer' : 'customers'}`}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => ws.answerChoice(undefined)}>Cancel</Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}

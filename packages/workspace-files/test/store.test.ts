@@ -10,7 +10,11 @@ import {
   listSourceFiles,
   runFolderName,
   saveRunOutput,
+  chooseWorkspace,
+  findNestedWorkspaces,
   safeFileName,
+  scanCustomers,
+  scopedPort,
   wrongFolderMessage,
   createCustomer,
   createObject,
@@ -317,5 +321,78 @@ describe('choosing the wrong folder', () => {
     });
     expect(wrongFolderMessage('customer')).toContain('Choose the folder that contains it');
     expect([...o.port.files.keys()].sort()).toEqual(['object.json', 'project.mms.json']);
+  });
+});
+
+describe('scanning customers', () => {
+  it('lists customers and says which folders could not be read as one', async () => {
+    const { port, ctx } = setup();
+    await openWorkspace(ctx);
+    await createCustomer(ctx, 'Acme');
+    await port.writeText(['Random', 'notes.txt'], 'hi');
+    await port.writeText(['Broken', 'customer.json'], '{"id":1}');
+    await port.writeText(['_archive', 'x', 'customer.json'], '{}');
+    const r = await scanCustomers(port);
+    expect(r.customers.map((c) => c.folder)).toEqual(['Acme']);
+    expect(r.skipped).toEqual([
+      { folder: 'Random', reason: 'it has no customer.json' },
+      { folder: 'Broken', reason: 'its customer.json is not valid' },
+    ]);
+  });
+});
+
+describe('workspaces inside a chosen folder (the real layout: MigrationStudio/Vincit)', () => {
+  async function layout() {
+    const { port, ctx } = setup();
+    // MigrationStudio/Vincit is the real workspace (two customers); MigrationStudio/Migration Mapping Studio is an empty leftover
+    const real = { ...ctx, port: scopedPort(port, ['Vincit']) };
+    await openWorkspace(real);
+    await createCustomer(real, 'Fiskars');
+    await createCustomer(real, 'Vincit');
+    const empty = { ...ctx, port: scopedPort(port, ['Migration Mapping Studio']) };
+    await openWorkspace(empty);
+    await port.writeText(['.DS_Store'], 'x');
+    await port.writeText(['Stray', 'a.txt'], 'x');
+    return { port, ctx };
+  }
+
+  it('finds workspaces one level down, the ones with customers first', async () => {
+    const { port } = await layout();
+    expect(await inspectRoot(port)).toBe('other');
+    expect(await findNestedWorkspaces(port)).toEqual([
+      { folder: 'Vincit', customers: 2 },
+      { folder: 'Migration Mapping Studio', customers: 0 },
+    ]);
+  });
+
+  it('uses the one with customers when the others are empty leftovers; asks when it is not clear', async () => {
+    const { port } = await layout();
+    expect(chooseWorkspace(await findNestedWorkspaces(port))).toEqual({
+      kind: 'one',
+      folder: 'Vincit',
+    });
+    expect(chooseWorkspace([])).toEqual({ kind: 'none' });
+    expect(chooseWorkspace([{ folder: 'A', customers: 0 }])).toEqual({ kind: 'one', folder: 'A' });
+    const two = [
+      { folder: 'A', customers: 1 },
+      { folder: 'B', customers: 3 },
+    ];
+    expect(chooseWorkspace(two)).toEqual({ kind: 'many', options: two });
+    const empties = [
+      { folder: 'A', customers: 0 },
+      { folder: 'B', customers: 0 },
+    ];
+    expect(chooseWorkspace(empties)).toEqual({ kind: 'many', options: empties });
+  });
+
+  it('a scoped port reads and writes inside its folder only', async () => {
+    const { port } = setup();
+    const inner = scopedPort(port, ['A']);
+    await inner.writeText(['x.txt'], 'hi');
+    expect([...port.files.keys()]).toEqual(['A/x.txt']);
+    expect(await inner.readText(['x.txt'])).toBe('hi');
+    expect(await inner.list([])).toEqual([{ name: 'x.txt', kind: 'file' }]);
+    await inner.remove(['x.txt']);
+    expect(port.files.size).toBe(0);
   });
 });

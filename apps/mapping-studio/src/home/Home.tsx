@@ -5,7 +5,7 @@ import { useWorkspace } from '../workspace';
 import { CustomerHome } from './CustomerHome';
 import { Customers } from './Customers';
 import { Welcome } from './Welcome';
-import { NewCustomerDialog, Page, StorageDialog, TopBar } from './shared';
+import { NewCustomerDialog, Page, StorageDialog, TopBar, WorkspaceChoiceDialog } from './shared';
 
 /** The workspace pages: first run, All customers, or one customer. */
 function HomePages() {
@@ -79,6 +79,7 @@ export function Home() {
     <>
       <HomePages />
       <StorageDialog open={ws.storageDialog} onClose={() => ws.setStorageDialog(false)} />
+      <WorkspaceChoiceDialog />
     </>
   );
 }

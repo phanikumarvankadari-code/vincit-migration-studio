@@ -13,6 +13,19 @@ export function browserStorageSupported(): boolean {
 export const browserStorageRoot = (): Promise<FileSystemDirectoryHandle> =>
   navigator.storage.getDirectory();
 
+/** A file or folder that is simply not there is "missing"; anything else (permissions, a file OneDrive has not downloaded) is a real problem and is reported. */
+const isMissing = (e: unknown): boolean =>
+  e instanceof DOMException && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError');
+
+function problem(path: readonly string[], e: unknown): Error {
+  const name = e instanceof DOMException ? e.name : 'Error';
+  const hint =
+    name === 'NotReadableError' || name === 'NotAllowedError'
+      ? ' If the folder is in OneDrive, make sure the files are downloaded (Always keep on this device) and that the browser may read the folder.'
+      : '';
+  return new Error(`Could not read ${path.join('/') || 'the folder'} (${name}).${hint}`);
+}
+
 async function dirAt(
   root: FileSystemDirectoryHandle,
   path: readonly string[],
@@ -22,8 +35,9 @@ async function dirAt(
   for (const name of path) {
     try {
       dir = await dir.getDirectoryHandle(name, { create });
-    } catch {
-      return undefined;
+    } catch (e) {
+      if (isMissing(e)) return undefined;
+      throw problem(path, e);
     }
   }
   return dir;
@@ -39,8 +53,9 @@ export function handlePort(root: FileSystemDirectoryHandle): FilePort {
     try {
       const file = await (await dir.getFileHandle(path[path.length - 1]!)).getFile();
       return new Uint8Array(await file.arrayBuffer());
-    } catch {
-      return undefined;
+    } catch (e) {
+      if (isMissing(e)) return undefined;
+      throw problem(path, e);
     }
   };
   const writeBytes = async (path: readonly string[], bytes: Uint8Array): Promise<void> => {
@@ -74,8 +89,8 @@ export function handlePort(root: FileSystemDirectoryHandle): FilePort {
       if (!dir) return;
       try {
         await dir.removeEntry(path[path.length - 1]!, { recursive: true });
-      } catch {
-        /* already gone */
+      } catch (e) {
+        if (!isMissing(e)) throw problem(path, e);
       }
     },
   };

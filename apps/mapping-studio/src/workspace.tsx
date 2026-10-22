@@ -5,15 +5,18 @@ import {
   TARGET_DIR,
   ARCHIVE_DIR,
   archive,
+  chooseWorkspace,
   copyBetweenPorts,
   countFiles,
   createCustomer,
   createObject,
   inputPath,
+  findNestedWorkspaces,
   inspectRoot,
   listCustomers,
   listObjects,
   listRuns,
+  scanCustomers,
   listSourceFiles,
   saveRunOutput,
   openWorkspace,
@@ -23,6 +26,7 @@ import {
   writeProject,
   type BusinessObject,
   type CustomerEntry,
+  type NestedWorkspace,
   type ObjectEntry,
   type RunEntry,
   type StoreContext,
@@ -101,7 +105,20 @@ export type Connection =
   | { kind: 'folder'; name: string }
   | { kind: 'needsPermission'; name: string };
 
+export interface WorkspaceNotice {
+  intent: 'info' | 'warning';
+  text: string;
+}
+
 export interface WorkspaceApi {
+  /** What happened when a folder was opened (customers found, folders skipped), so it never looks like nothing happened. */
+  notice: WorkspaceNotice | undefined;
+  dismissNotice: () => void;
+  /** A folder is being opened. */
+  opening: boolean;
+  /** Several workspaces were found in the chosen folder: the person picks one. */
+  choice: { folderName: string; options: NestedWorkspace[] } | undefined;
+  answerChoice: (folder: string | undefined) => void;
   phase: 'loading' | 'ready' | 'error';
   error: string | undefined;
   storageLabel: string;
@@ -214,6 +231,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [portfolio, setPortfolio] = useState<PortfolioCustomer[]>([]);
   const [search, setSearch] = useState('');
   const [storageDialog, setStorageDialog] = useState(false);
+  const [notice, setNotice] = useState<WorkspaceNotice | undefined>();
+  const [opening, setOpening] = useState(false);
+  const skippedRef = useRef<{ folder: string; reason: string }[]>([]);
+  const portfolioCount = useRef({ customers: 0, objects: 0 });
+  const choiceResolver = useRef<((folder: string | undefined) => void) | undefined>(undefined);
+  const [choice, setChoice] = useState<
+    { folderName: string; options: NestedWorkspace[] } | undefined
+  >();
   const [browserCustomerCount, setBrowserCustomerCount] = useState(0);
   const [open, setOpen] = useState<OpenObject | undefined>();
   const [unfiled, setUnfiled] = useState<LibraryEntry[]>(() => listProjects());
@@ -235,7 +260,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const loadAll = useCallback(async (): Promise<CustomerEntry[]> => {
     const ctx = ctxRef.current;
     if (!ctx) return [];
-    const list = await listCustomers(ctx.port);
+    const scanned = await scanCustomers(ctx.port);
+    const list = scanned.customers;
+    skippedRef.current = scanned.skipped;
     const out: PortfolioCustomer[] = [];
     for (const entry of list) {
       const cards: ObjectCard[] = [];
@@ -275,6 +302,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     setCustomers(list);
     setPortfolio(out);
+    portfolioCount.current = {
+      customers: list.length,
+      objects: out.reduce((n, p) => n + p.cards.length, 0),
+    };
     return list;
   }, []);
 
@@ -331,44 +362,66 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [customerFolder],
   );
 
-  /** Checks a folder and makes it ready as a workspace (a folder with other files gets a folder of its own inside). */
+  /** Asks which of several workspaces in the chosen folder to use. */
+  const askChoice = useCallback(
+    (folderName: string, options: NestedWorkspace[]): Promise<string | undefined> =>
+      new Promise((resolve) => {
+        choiceResolver.current = resolve;
+        setChoice({ folderName, options });
+      }),
+    [],
+  );
+
+  /**
+   * Checks a folder and makes it ready as a workspace. The folder may be the workspace, or hold it one level down
+   * (the real layout is often MigrationStudio/Vincit): then that workspace is used, and a person is asked only when
+   * it is not clear which one. A folder with other files and no workspace in it gets a folder of its own, but only
+   * when a new workspace is wanted.
+   */
   const prepareRoot = useCallback(
     async (
       root: FileSystemDirectoryHandle,
       existingOnly = false,
-    ): Promise<{ ok: true; ctx: StoreContext } | { ok: false; message: string }> => {
+    ): Promise<
+      | { ok: true; ctx: StoreContext; handle: FileSystemDirectoryHandle; via?: string }
+      | { ok: false; message: string }
+    > => {
+      let handle = root;
       let port = handlePort(root);
       let kind = await inspectRoot(port);
+      let via: string | undefined;
       if (kind === 'customer' || kind === 'object') {
         return { ok: false, message: wrongFolderMessage(kind) };
       }
-      if (existingOnly) {
-        // Opening a workspace that is already there: this folder, or the "Migration Mapping Studio" folder inside it.
-        if (kind !== 'workspace') {
-          let inner: FileSystemDirectoryHandle | undefined;
-          try {
-            inner = await root.getDirectoryHandle('Migration Mapping Studio');
-          } catch {
-            inner = undefined;
-          }
-          if (inner && (await inspectRoot(handlePort(inner))) === 'workspace') {
-            port = handlePort(inner);
-            kind = 'workspace';
-          }
+      if (kind === 'other') {
+        const choice = chooseWorkspace(await findNestedWorkspaces(port));
+        let folder: string | undefined;
+        if (choice.kind === 'one') folder = choice.folder;
+        else if (choice.kind === 'many') {
+          folder = await askChoice(root.name, choice.options);
+          if (!folder) return { ok: false, message: 'No workspace was chosen.' };
         }
-        if (kind !== 'workspace')
-          return {
-            ok: false,
-            message:
-              kind === 'empty'
-                ? 'There is no workspace in that folder. To start a new one, create a customer and choose the folder there.'
-                : 'No workspace was found in that folder or in its "Migration Mapping Studio" folder.',
-          };
-      } else if (kind === 'other') {
-        // A folder that already holds other files (for example the OneDrive top folder): keep to a folder of our own inside it.
-        const sub = await root.getDirectoryHandle('Migration Mapping Studio', { create: true });
-        port = handlePort(sub);
+        if (folder) {
+          handle = await root.getDirectoryHandle(folder);
+          port = handlePort(handle);
+          kind = 'workspace';
+          via = root.name;
+        }
+      }
+      if (existingOnly && kind !== 'workspace')
+        return {
+          ok: false,
+          message:
+            kind === 'empty'
+              ? 'There is no workspace in that folder. To start a new one, create a customer and choose the folder there.'
+              : 'No workspace was found in that folder or in the folders inside it.',
+        };
+      if (kind === 'other') {
+        // A folder with other files and no workspace in it: keep to a folder of our own inside it.
+        handle = await root.getDirectoryHandle('Migration Mapping Studio', { create: true });
+        port = handlePort(handle);
         kind = await inspectRoot(port);
+        via = root.name;
         if (kind !== 'empty' && kind !== 'workspace')
           return {
             ok: false,
@@ -378,9 +431,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       const ctx: StoreContext = { port, now: nowIso, newId };
       const opened = await openWorkspace(ctx);
-      return opened.ok ? { ok: true, ctx } : opened;
+      return opened.ok ? { ok: true, ctx, handle, ...(via ? { via } : {}) } : opened;
     },
-    [],
+    [askChoice],
   );
 
   /** Makes `root` the workspace: creates or checks its marker, then loads the customers. */
@@ -389,12 +442,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       root: FileSystemDirectoryHandle,
       conn: Connection,
       existingOnly = false,
-    ): Promise<Result> => {
+    ): Promise<
+      { ok: true; handle: FileSystemDirectoryHandle; via?: string } | { ok: false; message: string }
+    > => {
       const prepared = await prepareRoot(root, existingOnly);
       if (!prepared.ok) return prepared;
       ctxRef.current = prepared.ctx;
-      setConnection(conn);
-      return { ok: true };
+      setConnection(conn.kind === 'folder' ? { kind: 'folder', name: prepared.handle.name } : conn);
+      return { ok: true, handle: prepared.handle, ...(prepared.via ? { via: prepared.via } : {}) };
     },
     [prepareRoot],
   );
@@ -409,7 +464,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (stored) {
           const perm = await folderPermission(stored);
           if (perm === 'granted') {
-            connected = await connectTo(stored, { kind: 'folder', name: stored.name });
+            // Opening what was chosen before never creates anything.
+            connected = await connectTo(stored, { kind: 'folder', name: stored.name }, true);
           } else {
             permissionHandle.current = stored;
             setConnection({ kind: 'needsPermission', name: stored.name });
@@ -444,18 +500,48 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       remember_: boolean,
       existingOnly = false,
     ): Promise<Result> => {
-      const r = await connectTo(root, conn, existingOnly);
-      if (!r.ok) return r;
-      if (remember_ && conn.kind === 'folder') {
-        await saveFolderHandle(root);
-      } else if (conn.kind === 'browser') await forgetFolderHandle();
-      permissionHandle.current = undefined;
-      openRef.current = undefined;
-      setOpen(undefined);
-      setError(undefined);
-      remember(undefined);
-      await refreshCustomers();
-      return { ok: true };
+      setOpening(true);
+      setNotice(undefined);
+      try {
+        const r = await connectTo(root, conn, existingOnly);
+        if (!r.ok) return r;
+        if (remember_ && conn.kind === 'folder') {
+          await saveFolderHandle(r.handle);
+        } else if (conn.kind === 'browser') await forgetFolderHandle();
+        permissionHandle.current = undefined;
+        openRef.current = undefined;
+        setOpen(undefined);
+        setError(undefined);
+        remember(undefined);
+        await refreshCustomers();
+        if (conn.kind === 'folder') {
+          const name = r.handle.name;
+          const where = r.via ? ` (inside “${r.via}”)` : '';
+          const skipped = skippedRef.current;
+          const customers = portfolioCount.current;
+          const skippedText =
+            skipped.length > 0
+              ? ` ${skipped.length} ${skipped.length === 1 ? 'folder was' : 'folders were'} skipped: ${skipped
+                  .slice(0, 4)
+                  .map((x) => `${x.folder} (${x.reason})`)
+                  .join(', ')}${skipped.length > 4 ? ', …' : ''}.`
+              : '';
+          setNotice(
+            customers.customers === 0
+              ? {
+                  intent: 'warning',
+                  text: `The workspace in the folder “${name}”${where} has no customers yet.${skippedText}`,
+                }
+              : {
+                  intent: skipped.length > 0 ? 'warning' : 'info',
+                  text: `Opened the workspace in the folder “${name}”${where}: ${customers.customers} ${customers.customers === 1 ? 'customer' : 'customers'}, ${customers.objects} business ${customers.objects === 1 ? 'object' : 'objects'}.${skippedText}`,
+                },
+          );
+        }
+        return { ok: true };
+      } finally {
+        setOpening(false);
+      }
     },
     [connectTo, refreshCustomers],
   );
@@ -533,6 +619,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo<WorkspaceApi>(
     () => ({
+      notice,
+      dismissNotice: () => setNotice(undefined),
+      opening,
+      choice,
+      answerChoice: (folder) => {
+        choiceResolver.current?.(folder);
+        choiceResolver.current = undefined;
+        setChoice(undefined);
+      },
       phase,
       error,
       storageLabel:
@@ -573,7 +668,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const perm = await requestFolderPermission(h);
         if (perm !== 'granted')
           return { ok: false, message: 'Permission to use the folder was not given.' };
-        const r = await switchTo(h, { kind: 'folder', name: h.name }, true);
+        const r = await switchTo(h, { kind: 'folder', name: h.name }, true, true);
         if (r.ok) setPhase('ready');
         return r;
       },
@@ -637,8 +732,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           const archived = await archive(source, [cf]);
           if (!archived.ok) return archived;
           ctxRef.current = dest;
-          setConnection({ kind: 'folder', name: picked.name });
-          await saveFolderHandle(picked);
+          setConnection({ kind: 'folder', name: prepared.handle.name });
+          await saveFolderHandle(prepared.handle);
           permissionHandle.current = undefined;
           openRef.current = undefined;
           setOpen(undefined);
@@ -870,6 +965,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       open,
       unfiled,
       connection,
+      notice,
+      opening,
+      choice,
       rowsLoaded,
       conflict,
       openNonce,

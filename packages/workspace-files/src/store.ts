@@ -97,6 +97,32 @@ export async function openWorkspace(ctx: StoreContext): Promise<Outcome<{ create
   return { ok: true, value: { created: true } };
 }
 
+export interface SkippedFolder {
+  folder: string;
+  reason: string;
+}
+
+/** The customers of a workspace, and the folders that look like customers but could not be read as one. */
+export async function scanCustomers(
+  port: FilePort,
+): Promise<{ customers: CustomerEntry[]; skipped: SkippedFolder[] }> {
+  const customers: CustomerEntry[] = [];
+  const skipped: SkippedFolder[] = [];
+  for (const e of await port.list([])) {
+    if (e.kind !== 'dir' || e.name === ARCHIVE_DIR || e.name.startsWith('.')) continue;
+    const text = await port.readText([e.name, CUSTOMER_FILE]);
+    if (text === undefined) {
+      skipped.push({ folder: e.name, reason: 'it has no customer.json' });
+      continue;
+    }
+    const customer = await readCustomer(port, e.name);
+    if (customer) customers.push({ folder: e.name, customer });
+    else skipped.push({ folder: e.name, reason: 'its customer.json is not valid' });
+  }
+  customers.sort((a, b) => a.customer.name.localeCompare(b.customer.name));
+  return { customers, skipped };
+}
+
 export async function listCustomers(port: FilePort): Promise<CustomerEntry[]> {
   const out: CustomerEntry[] = [];
   for (const e of await port.list([])) {
@@ -337,4 +363,50 @@ export async function copyBetweenPorts(
     }
   }
   return n;
+}
+
+/** A FilePort that sees one folder of another port as its root. */
+export function scopedPort(port: FilePort, prefix: readonly string[]): FilePort {
+  const at = (p: readonly string[]): string[] => [...prefix, ...p];
+  return {
+    list: (p) => port.list(at(p)),
+    readText: (p) => port.readText(at(p)),
+    writeText: (p, t) => port.writeText(at(p), t),
+    readBytes: (p) => port.readBytes(at(p)),
+    writeBytes: (p, b) => port.writeBytes(at(p), b),
+    remove: (p) => port.remove(at(p)),
+  };
+}
+
+export interface NestedWorkspace {
+  /** Folder name inside the chosen folder. */
+  folder: string;
+  customers: number;
+}
+
+/** Workspaces one level down: a chosen folder often holds the real workspace folder rather than being one. */
+export async function findNestedWorkspaces(port: FilePort): Promise<NestedWorkspace[]> {
+  const out: NestedWorkspace[] = [];
+  for (const e of await port.list([])) {
+    if (e.kind !== 'dir' || e.name === ARCHIVE_DIR || e.name.startsWith('.')) continue;
+    const inner = scopedPort(port, [e.name]);
+    if ((await inspectRoot(inner)) !== 'workspace') continue;
+    out.push({ folder: e.name, customers: (await scanCustomers(inner)).customers.length });
+  }
+  return out.sort((a, b) => b.customers - a.customers || a.folder.localeCompare(b.folder));
+}
+
+export type WorkspaceChoice =
+  { kind: 'none' } | { kind: 'one'; folder: string } | { kind: 'many'; options: NestedWorkspace[] };
+
+/**
+ * Which nested workspace to use. One candidate: that one. Several, but only one with customers (the others are
+ * empty leftovers): the one with customers. Otherwise the person chooses.
+ */
+export function chooseWorkspace(found: readonly NestedWorkspace[]): WorkspaceChoice {
+  if (found.length === 0) return { kind: 'none' };
+  if (found.length === 1) return { kind: 'one', folder: found[0]!.folder };
+  const withCustomers = found.filter((f) => f.customers > 0);
+  if (withCustomers.length === 1) return { kind: 'one', folder: withCustomers[0]!.folder };
+  return { kind: 'many', options: [...found] };
 }
