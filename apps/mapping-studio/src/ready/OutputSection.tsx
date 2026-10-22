@@ -9,11 +9,12 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { toZip } from '@mms/file-export';
-import { fileBytes, runLocal, type OutputFile } from '@mms/local-run';
+import { fileBytes, runLocal, type LocalRunResult, type OutputFile } from '@mms/local-run';
 import { canRunFull, datasetsWithoutData } from '@mms/studio-model';
 import { useState } from 'react';
 import { Section } from '../components/common';
 import { nowIso, useStudio } from '../context';
+import { useOptionalWorkspace } from '../workspace';
 import { MIME, downloadFile } from '../lib/storage';
 
 const useStyles = makeStyles({
@@ -43,6 +44,27 @@ export function OutputSection() {
   const [xlsx, setXlsx] = useState(false);
   const [header, setHeader] = useState<'displayName' | 'technicalName'>('displayName');
   const [busy, setBusy] = useState(false);
+  const ws = useOptionalWorkspace();
+  const [saveEvery, setSaveEvery] = useState(() => {
+    try {
+      return window.localStorage.getItem('mms:saveOutputs') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const [saved, setSaved] = useState<
+    { ok: true; path: string; files: number } | { ok: false; message: string } | undefined
+  >();
+
+  const saveToWorkspace = async (result: LocalRunResult) => {
+    if (!ws || result.files.length === 0) return;
+    setSaved(
+      await ws.saveOutput(
+        result.files.map((f) => ({ name: f.name, bytes: fileBytes(f) })),
+        { startedAt: result.summary.startedAt, snapshotName: result.summary.snapshotName },
+      ),
+    );
+  };
   const missing = datasetsWithoutData(state);
   const record = eligible.find((r) => r.snapshot.id === chosen) ?? eligible.at(-1);
 
@@ -73,7 +95,9 @@ export function OutputSection() {
         },
       );
       setLastOutput(result);
+      setSaved(undefined);
       setBusy(false);
+      if (ws && saveEvery && result.run.status !== 'failed') void saveToWorkspace(result);
     }, 20);
   };
 
@@ -136,6 +160,21 @@ export function OutputSection() {
               <option value="technicalName">Technical names</option>
             </Select>
           </label>
+          {ws && (
+            <Checkbox
+              label="Save every run into the workspace folder"
+              checked={saveEvery}
+              onChange={(_, d) => {
+                const on = d.checked === true;
+                setSaveEvery(on);
+                try {
+                  window.localStorage.setItem('mms:saveOutputs', on ? 'on' : 'off');
+                } catch {
+                  /* a per-viewer convenience */
+                }
+              }}
+            />
+          )}
           <Button appearance="primary" disabled={busy || missing.length > 0} onClick={run}>
             {busy ? 'Running…' : 'Run on all rows and create files'}
           </Button>
@@ -239,7 +278,27 @@ export function OutputSection() {
                   ))}
                 </tbody>
               </table>
-              <div>
+              {saved?.ok && (
+                <MessageBar intent="success" data-testid="output-saved">
+                  <MessageBarBody>
+                    Saved {saved.files} files to {saved.path}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {saved && !saved.ok && (
+                <MessageBar intent="error" data-testid="output-save-error">
+                  <MessageBarBody>
+                    The files were not saved to the workspace folder: {saved.message} They can still
+                    be downloaded.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              <div className={s.row}>
+                {ws && (
+                  <Button appearance="primary" onClick={() => void saveToWorkspace(lastOutput)}>
+                    Save to workspace folder
+                  </Button>
+                )}
                 <Button
                   onClick={() =>
                     downloadFile(

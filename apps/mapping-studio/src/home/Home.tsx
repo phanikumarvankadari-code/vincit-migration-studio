@@ -111,6 +111,11 @@ function CardView({
       ) : (
         <Text className={s.muted}>No project saved yet</Text>
       )}
+      <Text size={200} className={s.muted} data-testid={`object-lastrun-${card.object.name}`}>
+        {card.lastRun
+          ? `Last output: ${card.lastRun.folder} (${card.lastRun.files} files)`
+          : 'No output saved yet'}
+      </Text>
       <Text size={200} className={s.muted}>
         Changed {new Date(card.object.updatedAt).toLocaleString()}
       </Text>

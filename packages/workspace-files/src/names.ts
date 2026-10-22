@@ -77,3 +77,22 @@ export function safeFileName(name: string): string {
   const safeStem = RESERVED.has(stem.toLowerCase()) ? `${stem}_` : stem;
   return `${safeStem}${cleanExt}`;
 }
+
+/** Folder of one run: its start time (so folders sort by time) and the snapshot name. */
+export function runFolderName(startedAtIso: string, snapshotName: string): string {
+  return `${stamp(startedAtIso)}_${safeName(snapshotName)}`;
+}
+
+/** Like uniqueName for a file: the number goes before the extension ("x (2).csv"). */
+export function uniqueFileName(name: string, existing: Iterable<string>): string {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return uniqueName(name, existing);
+  const stem = name.slice(0, dot);
+  const ext = name.slice(dot);
+  const taken = new Set([...existing].map((n) => n.toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let i = 2; ; i++) {
+    const candidate = `${stem} (${i})${ext}`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
