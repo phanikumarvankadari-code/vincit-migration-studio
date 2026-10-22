@@ -23,3 +23,7 @@ Not testable in CI: the real OneDrive sync. Manual check: choose the real OneDri
 ## Added later: open an existing workspace
 
 `e2e/onedrive-folder.spec.ts` covers AC-8: Open workspace from OneDrive folder from the first-run page, All customers and the storage dialog; the workspace itself or its parent folder; empty and foreign folders refused with nothing written; closing the picker; the folder remembered; the link from single-project mode.
+
+## Fix: opening the real OneDrive layout
+
+A real OneDrive had `MigrationStudio/Vincit` (the workspace, two customers) next to an empty `MigrationStudio/Migration Mapping Studio` leftover. Choosing `MigrationStudio` opened the empty leftover and nothing seemed to happen. Now the workspace with customers is used, several candidates are chosen from a dialog, the remembered folder is the workspace itself, startup never creates folders, and every open reports what it found. Tests: `packages/workspace-files` (nested discovery, choice rule, scoped port, scanning) and `e2e/onedrive-folder.spec.ts` (the real layout, the choice dialog, create in an existing workspace, notices, unreadable file).

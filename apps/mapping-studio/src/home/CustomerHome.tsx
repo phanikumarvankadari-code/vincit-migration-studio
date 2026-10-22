@@ -19,6 +19,7 @@ import { Bar, StatusTag, currentStep, formatWhen, pctOf, STEPS } from '../compon
 import { useWorkspace, type ObjectCard } from '../workspace';
 import {
   BrowserCustomersBanner,
+  WorkspaceNoticeBar,
   ConfirmArchive,
   NewObjectDialog,
   Page,
@@ -69,6 +70,7 @@ export function CustomerHome() {
     <Page>
       <TopBar search />
       <main className="mms-main">
+        <WorkspaceNoticeBar />
         <BrowserCustomersBanner />
         <nav
           aria-label="Breadcrumb"

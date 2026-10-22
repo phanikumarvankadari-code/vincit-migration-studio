@@ -19,6 +19,15 @@ async function installPicker(page: Page): Promise<void> {
   await page.addInitScript((disk) => {
     (window as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () =>
       (await navigator.storage.getDirectory()).getDirectoryHandle(disk, { create: true });
+    // A test can ask for a file the browser cannot read (a OneDrive file that is not downloaded).
+    if (localStorage.getItem('test:unreadable')) {
+      const original = FileSystemFileHandle.prototype.getFile;
+      FileSystemFileHandle.prototype.getFile = function (this: FileSystemFileHandle) {
+        if (this.name === 'customer.json')
+          return Promise.reject(new DOMException('not downloaded', 'NotReadableError'));
+        return original.call(this);
+      };
+    }
     // A test can ask for the "needs permission again" case.
     if (localStorage.getItem('test:prompt')) {
       const proto = FileSystemHandle.prototype as unknown as Record<string, unknown>;
@@ -491,5 +500,162 @@ test.describe('OneDrive folder (SPEC-033)', () => {
     await page.getByTestId('go-to-workspace').click();
     await expect(page.getByTestId('home')).toBeVisible();
     await expect(page.getByText('Create your first customer')).toBeVisible();
+  });
+
+  test('after opening, a message always says what was found', async ({ page }) => {
+    await setUpFolder(page, 'Acme Oy');
+    await addObject(page, 'Profit Center');
+    await page.getByRole('button', { name: 'All customers' }).click();
+    await addCustomer(page, 'Beta Ab');
+    await forgetFolder(page);
+    await page.getByTestId('open-workspace-folder').click();
+    const notice = page.getByTestId('workspace-notice');
+    await expect(notice).toContainText(
+      'Opened the workspace in the folder “OneDrive-Test”: 2 customers, 1 business object.',
+    );
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+  });
+
+  test('folders that are not customers are listed in a warning, not silently skipped', async ({
+    page,
+  }) => {
+    await setUpFolder(page, 'Acme Oy');
+    await writeDisk(page, 'Stray/notes.txt', 'hi');
+    await writeDisk(page, 'Broken/customer.json', '{"id":1}');
+    await forgetFolder(page);
+    await page.getByTestId('open-workspace-folder').click();
+    const notice = page.getByTestId('workspace-notice');
+    await expect(notice).toContainText('1 customer');
+    await expect(notice).toContainText('2 folders were skipped');
+    await expect(notice).toContainText('Stray (it has no customer.json)');
+    await expect(notice).toContainText('Broken (its customer.json is not valid)');
+  });
+
+  test('a workspace with no customers says so instead of looking unchanged', async ({ page }) => {
+    await installPicker(page);
+    await openHome(page);
+    await writeDisk(
+      page,
+      'mms-workspace.json',
+      JSON.stringify({
+        format: 'mms.root',
+        schemaVersion: 1,
+        createdAt: '2026-10-22T10:00:00.000Z',
+      }),
+    );
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('workspace-notice')).toContainText('has no customers yet');
+    await expect(page.getByTestId('storage-label')).toContainText(`OneDrive folder “${DISK}”`);
+  });
+
+  test('a file the browser cannot read (not downloaded from OneDrive) is reported with what to do', async ({
+    page,
+  }) => {
+    await setUpFolder(page, 'Acme Oy');
+    await forgetFolder(page);
+    await page.evaluate(() => localStorage.setItem('test:unreadable', '1'));
+    await page.reload();
+    await expect(page.getByTestId('home')).toBeVisible();
+    await page.getByTestId('open-workspace-folder').click();
+    const message = page.getByTestId('home-message');
+    await expect(message).toContainText('Could not read Acme Oy/customer.json');
+    await expect(message).toContainText('NotReadableError');
+    await expect(message).toContainText('downloaded');
+  });
+
+  const MANIFEST = JSON.stringify({
+    format: 'mms.root',
+    schemaVersion: 1,
+    createdAt: '2026-10-22T09:07:09.649Z',
+  });
+  const customerJson = (name: string) =>
+    JSON.stringify({ id: `id-${name}`, name, createdAt: '2026-10-22T09:30:00.000Z' });
+
+  /**
+   * The layout found on a real OneDrive: the chosen folder holds the workspace folder (Vincit) rather than being
+   * one, next to an empty leftover workspace.
+   */
+  async function realLayout(page: Page): Promise<void> {
+    await writeDisk(page, '.DS_Store', 'x');
+    await writeDisk(page, 'Vincit/mms-workspace.json', MANIFEST);
+    await writeDisk(page, 'Vincit/Fiskars/customer.json', customerJson('Fiskars'));
+    await writeDisk(page, 'Vincit/Vincit/customer.json', customerJson('Vincit'));
+    await writeDisk(page, 'Migration Mapping Studio/mms-workspace.json', MANIFEST);
+  }
+
+  test('choosing the folder that holds the workspace folder opens that workspace, not an empty leftover next to it', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await realLayout(page);
+    const before = await disk(page);
+    await page.getByTestId('open-workspace-folder').click();
+    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await expect(page.getByTestId('customer-Fiskars')).toBeVisible();
+    await expect(page.getByTestId('customer-Vincit')).toBeVisible();
+    await expect(page.getByTestId('storage-label')).toContainText('OneDrive folder “Vincit”');
+    await expect(page.getByTestId('workspace-notice')).toContainText(
+      `Opened the workspace in the folder “Vincit” (inside “${DISK}”): 2 customers`,
+    );
+    expect(await disk(page)).toEqual(before); // nothing was created or written
+    // remembered: the next visit opens the same workspace, and still creates nothing
+    await page.reload();
+    await expect(page.getByTestId('storage-label')).toContainText('OneDrive folder “Vincit”');
+    await expect(page.getByTestId('customer-Fiskars')).toBeVisible();
+    expect(await disk(page)).toEqual(before);
+  });
+
+  test('with several workspaces that have customers, the person chooses which to open', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await writeDisk(page, 'Alpha/mms-workspace.json', MANIFEST);
+    await writeDisk(page, 'Alpha/Acme/customer.json', customerJson('Acme'));
+    await writeDisk(page, 'Beta/mms-workspace.json', MANIFEST);
+    await writeDisk(page, 'Beta/Bolt/customer.json', customerJson('Bolt'));
+    await writeDisk(page, 'Beta/Cobalt/customer.json', customerJson('Cobalt'));
+    await page.getByTestId('open-workspace-folder').click();
+    const dialog = page.getByRole('alertdialog', { name: 'Which workspace?' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('choose-workspace-Alpha')).toContainText('1 customer');
+    await expect(dialog.getByTestId('choose-workspace-Beta')).toContainText('2 customers');
+    // cancelling changes nothing
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByTestId('home-message')).toContainText('No workspace was chosen');
+    await expect(page.getByText('Create your first customer')).toBeVisible();
+    await page.getByTestId('open-workspace-folder').click();
+    await page.getByTestId('choose-workspace-Beta').click();
+    await expect(page.getByTestId('customer-Bolt')).toBeVisible();
+    await expect(page.getByTestId('customer-Cobalt')).toBeVisible();
+    await expect(page.getByTestId('customer-Acme')).toHaveCount(0);
+    await expect(page.getByTestId('storage-label')).toContainText('OneDrive folder “Beta”');
+  });
+
+  test('creating the first customer in a folder that already holds a workspace uses that workspace and creates no new one', async ({
+    page,
+  }) => {
+    await installPicker(page);
+    await openHome(page);
+    await realLayout(page);
+    await page.getByLabel('Customer name').fill('Helios');
+    await page.getByRole('button', { name: 'Choose folder and create customer' }).click();
+    await expect(page.getByTestId('home-title')).toHaveText('Helios');
+    const files = await disk(page);
+    expect(files).toContain('Vincit/Helios/customer.json');
+    expect(files).toContain('Vincit/Fiskars/customer.json');
+    expect(
+      files.some(
+        (f) =>
+          f.startsWith('Migration Mapping Studio/') &&
+          f !== 'Migration Mapping Studio/mms-workspace.json',
+      ),
+    ).toBe(false);
+    expect(files.filter((f) => f.endsWith('mms-workspace.json')).sort()).toEqual([
+      'Migration Mapping Studio/mms-workspace.json',
+      'Vincit/mms-workspace.json',
+    ]);
   });
 });

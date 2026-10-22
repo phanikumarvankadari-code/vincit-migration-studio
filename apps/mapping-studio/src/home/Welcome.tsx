@@ -1,7 +1,13 @@
 import { Button, Input, MessageBar, MessageBarBody, Text } from '@fluentui/react-components';
 import { useState } from 'react';
 import { useWorkspace } from '../workspace';
-import { BrowserCustomersBanner, OpenWorkspaceButton, Page, TopBar } from './shared';
+import {
+  BrowserCustomersBanner,
+  OpenWorkspaceButton,
+  Page,
+  TopBar,
+  WorkspaceNoticeBar,
+} from './shared';
 
 const STEPS = [
   ['1', 'Add a customer', 'The migration engagement that everything below belongs to.'],
@@ -60,6 +66,7 @@ export function Welcome() {
         }}
       >
         <div style={{ flex: '1 1 100%', marginBottom: -32 }}>
+          <WorkspaceNoticeBar />
           <BrowserCustomersBanner />
         </div>
         <div

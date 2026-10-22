@@ -4,6 +4,7 @@ import { Bar, StatusTag, Tag, formatWhen, pctOf } from '../components/brand';
 import { useWorkspace, type ObjectCard, type PortfolioCustomer } from '../workspace';
 import {
   BrowserCustomersBanner,
+  WorkspaceNoticeBar,
   OpenWorkspaceButton,
   Page,
   TopBar,
@@ -95,6 +96,7 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
     <Page>
       <TopBar search />
       <main className="mms-main">
+        <WorkspaceNoticeBar />
         <BrowserCustomersBanner />
         {openMessage && (
           <MessageBar intent="error" data-testid="open-workspace-message">
