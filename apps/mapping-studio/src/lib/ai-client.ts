@@ -1,5 +1,9 @@
 import {
   buildAiPrompts,
+  buildStructureAiPrompt,
+  mergeStructureSuggestions,
+  parseStructureAiResponse,
+  type StructureSuggestion,
   buildValuePrompt,
   mergeSuggestions,
   parseAiResponse,
@@ -256,12 +260,15 @@ export async function aiSuggest(args: {
   structureId: string;
   rules: readonly MappingSuggestion[];
   settings: AiSettings;
+  /** Offer these source datasets only (a structure's pair). */
+  datasetIds?: readonly string[];
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
 }): Promise<{ suggestions: MappingSuggestion[]; problems: string[] }> {
   const prompts = buildAiPrompts(args.project, {
     structureId: args.structureId,
     hints: args.rules,
+    ...(args.datasetIds ? { datasetIds: args.datasetIds } : {}),
   });
   const items: AiMapping[] = [];
   const problems: string[] = [];
@@ -302,4 +309,20 @@ export async function aiSuggestValue(args: {
   const parsed = parseValueResponse(await askAi(args.settings, prompt, args.signal));
   if (!parsed.ok) throw new AiError(parsed.problem);
   return parsed.suggestion;
+}
+
+/** Which source dataset drives which target structure: the rule-based pairs plus the model's, merged. Metadata only. */
+export async function aiSuggestPairs(args: {
+  project: Project;
+  rules: readonly StructureSuggestion[];
+  settings: AiSettings;
+  signal?: AbortSignal;
+}): Promise<{ suggestions: StructureSuggestion[]; problems: string[] }> {
+  const prompt = buildStructureAiPrompt(args.project, args.rules);
+  if (!prompt) return { suggestions: [...args.rules], problems: [] };
+  const parsed = parseStructureAiResponse(await askAi(args.settings, prompt, args.signal), prompt);
+  return {
+    suggestions: mergeStructureSuggestions(args.rules, parsed.items, args.project),
+    problems: parsed.problems,
+  };
 }

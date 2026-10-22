@@ -24,6 +24,7 @@ Each milestone ends with a demo check: something you can run or see.
 | M14 ✅ | Outputs to the folder | 034 | Full run saved to `output/<run>/` in the object folder, plus zip download. |
 | M15 ✅ | Vincit Migration Studio UI | 035 | Corporate light UI with the Vincit logo: first run, All customers, customer home, object detail; move an existing customer to a OneDrive folder. |
 | M16 ✅ | AI suggestions and conflicts | 036 | Local-model (or API-key) suggestions with confidence and origin, conflicts in the mapper and table, confidence colours on lines and capsules, hard-coded values with date suggestions, delete with undo. |
+| M17 ✅ | Structure pairing | 037 | Map starts with structures: rule and AI pair suggestions with confidence and coverage, accept or change the driver and helpers, Fields step scoped to the pair. |
 
 ## Decisions already made
 

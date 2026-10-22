@@ -38,6 +38,12 @@ export interface SuggestMappingsOptions {
   structureId?: string;
   /** Row data by dataset ID. When given, an empty source column counts against a suggestion. */
   data?: Readonly<Record<string, SourceRows>>;
+  /**
+   * Look in these source datasets only (the structure's driver and helpers). Fields in other datasets are only
+   * offered, with a lower confidence and a note, when `includeOthers` is set.
+   */
+  datasetIds?: readonly string[];
+  includeOthers?: boolean;
 }
 
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -150,8 +156,11 @@ export function suggestMappings(
     (s) => options.structureId === undefined || s.id === options.structureId,
   );
   const mapped = new Set(project.mappingDefinition.mappings.map((m) => m.targetFieldId as string));
+  const scope = options.datasetIds ? new Set(options.datasetIds) : undefined;
   const sources = project.sourceDefinitions.flatMap((d) =>
-    d.datasets.flatMap((ds) => ds.fields.map((f) => ({ datasetId: ds.id as string, field: f }))),
+    d.datasets
+      .filter((ds) => !scope || scope.has(ds.id) || options.includeOthers)
+      .flatMap((ds) => ds.fields.map((f) => ({ datasetId: ds.id as string, field: f }))),
   );
   const out: MappingSuggestion[] = [];
   for (const st of structures) {
@@ -159,7 +168,12 @@ export function suggestMappings(
       if (mapped.has(t.id)) continue;
       const scored: Scored[] = [];
       for (const src of sources) {
-        const r = scoreFieldPair(t, src.field, options.data?.[src.datasetId]);
+        let r = scoreFieldPair(t, src.field, options.data?.[src.datasetId]);
+        if (scope && !scope.has(src.datasetId) && r.score > 0)
+          r = {
+            score: Math.round(r.score * 85) / 100,
+            reasons: [...r.reasons, 'it is in another structure, not this one’s source'],
+          };
         if (r.score >= min) scored.push({ ...src, ...r });
       }
       // Stable sort: equal scores keep the order of the sources.

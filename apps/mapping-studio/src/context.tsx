@@ -5,6 +5,7 @@ import { createBuiltInRegistry } from '@mms/routine-library';
 import {
   applySuggestions,
   buildMappingRows,
+  clearDriver,
   conflictsByTarget,
   createStudioState,
   detectConflicts,
@@ -12,6 +13,7 @@ import {
   encodeWorkspace,
   reduce,
   removeMappings,
+  setDriver,
   stageStatuses,
   type MappingConflict,
   type MappingRow,
@@ -21,7 +23,7 @@ import {
   type StudioState,
 } from '@mms/studio-model';
 import { preflight, runTest, type SampleConfig } from '@mms/test-engine';
-import type { MappingSuggestion } from '@mms/mapping-suggest';
+import type { MappingSuggestion, StructureSuggestion } from '@mms/mapping-suggest';
 import type { RoutineRegistry } from '@mms/transformation-engine';
 import {
   createContext,
@@ -73,7 +75,19 @@ export interface StudioApi {
   conflictsByField: Map<string, MappingConflict[]>;
   /** Removes mappings and keeps the project as it was, so Undo can bring them back. */
   deleteMappings: (targets: readonly { structureId: string; fieldId: string }[]) => number;
-  lastDeleted: { count: number; fields: string } | undefined;
+  lastDeleted: { message: string } | undefined;
+  /** Which source dataset drives each target structure: suggestions waiting for a decision. */
+  pairSuggestions: StructureSuggestion[] | undefined;
+  setPairSuggestions: (
+    s:
+      | StructureSuggestion[]
+      | undefined
+      | ((cur: StructureSuggestion[] | undefined) => StructureSuggestion[] | undefined),
+  ) => void;
+  /** Sets the driver dataset of target structures, with Undo. */
+  pairStructures: (pairs: readonly { structureId: string; driverDatasetId: string }[]) => number;
+  /** Removes the driver of a structure, with Undo. */
+  unpairStructure: (structureId: string) => void;
   undoDelete: () => void;
   dismissUndo: () => void;
   stage: Stage;
@@ -149,9 +163,8 @@ export function StudioProvider({
   const [startup, setStartup] = useState<Stored>(boot.startup);
   const [lastOutput, setLastOutput] = useState<LocalRunResult | undefined>();
   const [suggestions, setSuggestions] = useState<MappingSuggestion[] | undefined>();
-  const [deleted, setDeleted] = useState<
-    { before: Project; count: number; fields: string } | undefined
-  >();
+  const [pairSuggestions, setPairSuggestions] = useState<StructureSuggestion[] | undefined>();
+  const [deleted, setDeleted] = useState<{ before: Project; message: string } | undefined>();
   const [saveStatus, setSaveStatus] = useState<StudioApi['saveStatus']>({ state: 'idle' });
   const registry = useMemo(
     () => createBuiltInRegistry({ randomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)) }),
@@ -234,15 +247,50 @@ export function StudioProvider({
               ?.fields.find((f) => f.id === t.fieldId)?.displayName,
         )
         .filter((n) => n !== undefined);
+      const list = names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
       setDeleted({
         before: state.project,
-        count: r.removed,
-        fields: names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : ''),
+        message: `${r.removed === 1 ? 'Mapping removed' : `${r.removed} mappings removed`}${list ? `: ${list}` : ''}.`,
       });
       dispatch({ type: 'projectEdited', project: r.project });
       return r.removed;
     },
     [state.project],
+  );
+  const structureName = useCallback(
+    (id: string) => state.project.targetDefinition?.structures.find((x) => x.id === id)?.name ?? id,
+    [state.project.targetDefinition],
+  );
+  const pairStructures = useCallback(
+    (pairs: readonly { structureId: string; driverDatasetId: string }[]) => {
+      let project = state.project;
+      let n = 0;
+      for (const p of pairs) {
+        const next = setDriver(project, p.structureId, p.driverDatasetId, nowIso());
+        if (next !== project) n++;
+        project = next;
+      }
+      if (n === 0) return 0;
+      const names = pairs.map((p) => structureName(p.structureId));
+      setDeleted({
+        before: state.project,
+        message: `${n === 1 ? 'Source dataset set' : `${n} source datasets set`} for ${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''}.`,
+      });
+      dispatch({ type: 'projectEdited', project });
+      return n;
+    },
+    [state.project, structureName],
+  );
+  const unpairStructure = useCallback(
+    (structureId: string) => {
+      const next = clearDriver(state.project, structureId, nowIso());
+      setDeleted({
+        before: state.project,
+        message: `Source dataset removed from ${structureName(structureId)}.`,
+      });
+      dispatch({ type: 'projectEdited', project: next });
+    },
+    [state.project, structureName],
   );
   const undoDelete = useCallback(() => {
     if (!deleted) return;
@@ -411,7 +459,11 @@ export function StudioProvider({
       conflicts,
       conflictsByField,
       deleteMappings,
-      lastDeleted: deleted ? { count: deleted.count, fields: deleted.fields } : undefined,
+      lastDeleted: deleted ? { message: deleted.message } : undefined,
+      pairSuggestions,
+      setPairSuggestions,
+      pairStructures,
+      unpairStructure,
       undoDelete,
       dismissUndo: () => setDeleted(undefined),
       stage,
@@ -441,6 +493,9 @@ export function StudioProvider({
       conflictsByField,
       deleteMappings,
       deleted,
+      pairSuggestions,
+      pairStructures,
+      unpairStructure,
       undoDelete,
       stage,
       runSample,

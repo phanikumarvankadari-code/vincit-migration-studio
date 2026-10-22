@@ -31,6 +31,8 @@ export interface BuildAiPromptsOptions {
   batchSize?: number;
   /** Rule-based suggestions, offered to the model as hints. */
   hints?: readonly MappingSuggestion[];
+  /** Offer these source datasets only (smaller questions, faster answers). */
+  datasetIds?: readonly string[];
 }
 
 const SYSTEM = [
@@ -52,9 +54,10 @@ export function buildAiPrompts(project: Project, options: BuildAiPromptsOptions 
   const sources = new Map<string, { datasetId: string; fieldId: string }>();
   const sourceByField = new Map<string, string>();
   const sourceLines: object[] = [];
+  const inScope = options.datasetIds ? new Set(options.datasetIds) : undefined;
   for (const sd of project.sourceDefinitions)
     for (const ds of sd.datasets)
-      for (const f of ds.fields) {
+      for (const f of inScope && !inScope.has(ds.id) ? [] : ds.fields) {
         const id = `s${sources.size + 1}`;
         sources.set(id, { datasetId: ds.id, fieldId: f.id });
         sourceByField.set(f.id, id);
