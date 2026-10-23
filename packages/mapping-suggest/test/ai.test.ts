@@ -586,4 +586,17 @@ describe('structure pairing (SPEC-037)', () => {
     const prompts = buildAiPrompts(p, { structureId: 'st-2', datasetIds: ['ds-2'] });
     expect([...prompts[0]!.sources.values()].every((s) => s.datasetId === 'ds-2')).toBe(true);
   });
+
+  it('ids the model repeats in a reason become names', () => {
+    const prompt = buildStructureAiPrompt(twoByTwo())!;
+    const t = [...prompt.targets.keys()][0]!;
+    const d = [...prompt.datasets.keys()][0]!;
+    const out = parseStructureAiResponse(
+      JSON.stringify({
+        pairs: [{ target: t, driver: d, confidence: 80, reason: `${d} fits ${t}` }],
+      }),
+      prompt,
+    );
+    expect(out.items[0]!.reason).toBe(`${prompt.names!.get(d)} fits ${prompt.names!.get(t)}`);
+  });
 });
