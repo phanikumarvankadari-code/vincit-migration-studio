@@ -11,13 +11,12 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { computeCompleteness, type TargetStructure } from '@mms/mapping-core';
-import { pairViews, type RowFilter } from '@mms/studio-model';
+import type { RowFilter } from '@mms/studio-model';
 import { useMemo, useState } from 'react';
 import { Section } from '../components/common';
 import { useStudio } from '../context';
 import { MappingEditor } from '../editor/MappingEditor';
 import { MappingTable } from './MappingTable';
-import { StructureMapper } from './StructureMapper';
 import { UndoBar } from './UndoBar';
 import { StructureSettings } from './StructureSettings';
 import { VisualMapper } from './VisualMapper';
@@ -46,8 +45,6 @@ export function MapStage() {
   const s = useStyles();
   const { state, rows, setStage } = useStudio();
   const [view, setView] = useState<'table' | 'visual'>('table');
-  // Step one pairs structures with source datasets; step two maps fields.
-  const [step, setStep] = useState<'structures' | 'fields'>('fields');
   const [filter, setFilter] = useState<RowFilter>({});
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
   // "Hard-code a value" opens the editor on the Constant type.
@@ -59,8 +56,6 @@ export function MapStage() {
     [target, state.project.mappingDefinition],
   );
   const selected = rows.find((r) => r.key === selectedKey);
-  const unpaired = pairViews(state.project).filter((v) => !v.driverDatasetId).length;
-  const datasetCount = state.project.sourceDefinitions.reduce((n, d) => n + d.datasets.length, 0);
 
   if (!target) {
     return (
@@ -133,64 +128,37 @@ export function MapStage() {
 
       <UndoBar />
       <TabList
-        selectedValue={step}
-        onTabSelect={(_, d) => setStep(d.value as 'structures' | 'fields')}
-        aria-label="Mapping step"
+        selectedValue={view}
+        onTabSelect={(_, d) => setView(d.value as 'table' | 'visual')}
+        aria-label="Mapping view"
       >
-        <Tab value="structures">1 · Structures</Tab>
-        <Tab value="fields">2 · Fields</Tab>
+        <Tab value="table">Mapping Table</Tab>
+        <Tab value="visual">Visual Mapper</Tab>
       </TabList>
 
-      {step === 'structures' ? (
-        <StructureMapper />
+      {view === 'table' ? (
+        <MappingTable
+          rows={rows}
+          structures={target.structures.map((x) => ({ id: x.id, name: x.name }))}
+          filter={filter}
+          onFilter={setFilter}
+          selectedKey={selectedKey}
+          onSelect={(r) => {
+            setPreset(undefined);
+            setSelectedKey(r.key);
+          }}
+          onHardCode={(r) => {
+            setPreset('constant');
+            setSelectedKey(r.key);
+          }}
+        />
       ) : (
-        <>
-          {unpaired > 0 && datasetCount > 0 && (
-            <MessageBar intent="info" data-testid="pair-hint">
-              <MessageBarBody>
-                {unpaired} of {target.structures.length} target{' '}
-                {unpaired === 1 ? 'structure has' : 'structures have'} no source dataset yet.
-                Pairing them first makes field suggestions faster and more accurate.
-              </MessageBarBody>
-              <Button size="small" onClick={() => setStep('structures')}>
-                Pair structures
-              </Button>
-            </MessageBar>
-          )}
-          <TabList
-            selectedValue={view}
-            onTabSelect={(_, d) => setView(d.value as 'table' | 'visual')}
-            aria-label="Mapping view"
-          >
-            <Tab value="table">Mapping Table</Tab>
-            <Tab value="visual">Visual Mapper</Tab>
-          </TabList>
-
-          {view === 'table' ? (
-            <MappingTable
-              rows={rows}
-              structures={target.structures.map((x) => ({ id: x.id, name: x.name }))}
-              filter={filter}
-              onFilter={setFilter}
-              selectedKey={selectedKey}
-              onSelect={(r) => {
-                setPreset(undefined);
-                setSelectedKey(r.key);
-              }}
-              onHardCode={(r) => {
-                setPreset('constant');
-                setSelectedKey(r.key);
-              }}
-            />
-          ) : (
-            <VisualMapper
-              onEditField={(structureId, fieldId, p) => {
-                setPreset(p);
-                setSelectedKey(`${structureId}/${fieldId}`);
-              }}
-            />
-          )}
-        </>
+        <VisualMapper
+          onEditField={(structureId, fieldId, p) => {
+            setPreset(p);
+            setSelectedKey(`${structureId}/${fieldId}`);
+          }}
+        />
       )}
 
       {selected && (

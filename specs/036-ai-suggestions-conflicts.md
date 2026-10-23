@@ -1,5 +1,7 @@
 # SPEC-036 AI Mapping Suggestions, Confidence, Conflicts and Deleting Mappings
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: conflict detection (type, length, reuse, empty source), delete with undo and the Hard-code button. AI, suggestions, confidence, value suggestions and the suggestion-disagree conflict are gone.
+
 ## Objective
 Let a local AI model (Ollama) propose mappings next to the rule-based ones, show every suggestion with a confidence, show conflicts visually in the mapper and in the Mapping Table, and make deleting mappings easy and reversible. AI proposes, a person approves (PD-010): nothing is mapped without a click, and the runtime never depends on AI.
 

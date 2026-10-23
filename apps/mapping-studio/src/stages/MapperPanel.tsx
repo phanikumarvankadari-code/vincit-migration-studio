@@ -1,7 +1,6 @@
 import {
   Badge,
   Button,
-  Checkbox,
   Input,
   MessageBar,
   MessageBarBody,
@@ -11,26 +10,10 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import type { SourceDataset } from '@mms/mapping-core';
-import {
-  confidenceBand,
-  mappingConfidence,
-  suggestMappings,
-  type MappingConfidence,
-  type MappingSuggestion,
-} from '@mms/mapping-suggest';
-import { connectFields, scopeOf, sourceNodeId, targetNodeId } from '@mms/studio-model';
+import { connectFields, sourceNodeId, targetNodeId } from '@mms/studio-model';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nowIso, useStudio } from '../context';
-import { BAND_STYLE, ConfidenceTag, ConflictTag, OriginTag } from '../components/confidence';
-import { AiSettingsDialog } from '../editor/AiSettingsDialog';
-import {
-  AiError,
-  aiReady,
-  aiSuggest,
-  autoConfigure,
-  loadAiSettings,
-  type AiSettings,
-} from '../lib/ai-client';
+import { ConflictTag } from '../components/confidence';
 import { StatusPill } from './MappingTable';
 
 const useStyles = makeStyles({
@@ -130,23 +113,16 @@ interface Seg {
   id: string;
   d: string;
   dim: boolean;
-  /** The second candidate of a suggestion conflict, drawn lighter. */
-  alt?: boolean;
 }
 interface Item {
   key: string;
-  kind: 'mapping' | 'suggestion';
   targetFieldId: string;
   segs: Seg[];
   pill?: { x: number; y: number; label: string };
-  /** Colour of a suggestion line, from its confidence band. */
-  line?: string;
   /** A warning marker for the conflicts of this target, with their messages. */
   warn?: { x: number; y: number; count: number; text: string };
 }
 
-const STRONG = 0.8; // High confidence
-const pct = (n: number): string => `${Math.round(n * 100)}%`;
 const curve = (x1: number, y1: number, x2: number, y2: number): string => {
   const xm = (x1 + x2) / 2;
   return `M ${x1} ${y1} C ${xm} ${y1}, ${xm} ${y2}, ${x2} ${y2}`;
@@ -163,18 +139,7 @@ export function MapperPanel({
   onEditField: (structureId: string, fieldId: string, preset?: 'constant') => void;
 }) {
   const s = useStyles();
-  const {
-    state,
-    send,
-    rows,
-    profiles,
-    suggestions,
-    setSuggestions,
-    acceptSuggestions,
-    conflicts,
-    conflictsByField,
-    deleteMappings,
-  } = useStudio();
+  const { state, send, rows, profiles, conflicts, conflictsByField, deleteMappings } = useStudio();
   const project = state.project;
   const structures = project.targetDefinition?.structures ?? [];
   const datasets = useMemo<SourceDataset[]>(
@@ -187,36 +152,14 @@ export function MapperPanel({
   const [tgtSearch, setTgtSearch] = useState('');
   const [tgtFilter, setTgtFilter] = useState<'all' | 'unmapped' | 'requiredUnmapped'>('all');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  // Datasets outside the structure's pair start closed; these are the ones the person opened.
-  const [openOutside, setOpenOutside] = useState<ReadonlySet<string>>(new Set());
-  const [alsoOthers, setAlsoOthers] = useState(false);
   const [selectedSource, setSelectedSource] = useState<string | undefined>();
   const [selectedTarget, setSelectedTarget] = useState<string | undefined>();
-  const [focusSuggestion, setFocusSuggestion] = useState<string | undefined>();
-  const [aiSettings, setAiSettings] = useState<AiSettings>(loadAiSettings);
-  const [showAi, setShowAi] = useState(false);
-  const [aiBusy, setAiBusy] = useState<string | undefined>();
   const [showConflicts, setShowConflicts] = useState(true);
   const [drag, setDrag] = useState<{ path: string } | undefined>();
   const [message, setMessage] = useState<{ intent: 'error' | 'info'; text: string } | undefined>();
   const [items, setItems] = useState<Item[]>([]);
 
   const structure = structures.find((x) => x.id === structureId) ?? structures[0];
-  const scope = useMemo(
-    () => (structure ? scopeOf(project, structure.id) : undefined),
-    [project, structure],
-  );
-  const driverId = scope?.[0];
-  const orderedDatasets = useMemo(
-    () =>
-      scope
-        ? [
-            ...datasets.filter((d) => scope.includes(d.id)),
-            ...datasets.filter((d) => !scope.includes(d.id)),
-          ]
-        : datasets,
-    [datasets, scope],
-  );
   const mappings = useMemo(
     () => project.mappingDefinition.mappings.filter((m) => m.targetStructureId === structure?.id),
     [project.mappingDefinition.mappings, structure?.id],
@@ -232,26 +175,10 @@ export function MapperPanel({
     () => new Set(mappings.flatMap((m) => m.sourceReferences.map((r) => r.fieldId as string))),
     [mappings],
   );
-  // How well each mapping in place matches: a direct copy is scored, the rest is the user's own design (manual).
-  const confOf = useMemo(
-    () =>
-      new Map<string, MappingConfidence>(
-        mappings.map((m) => [m.targetFieldId as string, mappingConfidence(project, m, state.data)]),
-      ),
-    [mappings, project, state.data],
-  );
   const mappedTargets = useMemo(
     () => new Set(mappings.map((m) => m.targetFieldId as string)),
     [mappings],
   );
-  const openSuggestions = useMemo(
-    () =>
-      (suggestions ?? []).filter(
-        (x) => x.targetStructureId === structure?.id && !mappedTargets.has(x.targetFieldId),
-      ),
-    [suggestions, structure?.id, mappedTargets],
-  );
-
   const wrapRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -329,16 +256,8 @@ export function MapperPanel({
       const cs = conflictsByField.get(m.targetFieldId) ?? [];
       next.push({
         key: m.id,
-        kind: 'mapping',
         targetFieldId: m.targetFieldId,
         segs,
-        ...(confOf.get(m.targetFieldId)?.kind === 'matched'
-          ? {
-              line: BAND_STYLE[
-                (confOf.get(m.targetFieldId) as { band: 'high' | 'medium' | 'low' }).band
-              ].line,
-            }
-          : {}),
         ...(fn ? { pill: { x: px, y: t.y, label: fn } } : {}),
         ...(cs.length > 0
           ? {
@@ -352,36 +271,6 @@ export function MapperPanel({
           : {}),
       });
     }
-    for (const sg of openSuggestions) {
-      const ds = datasets.find((d) => d.id === sg.datasetId);
-      const a = find([`s:${sg.sourceFieldId}`, `sd:${ds?.id ?? ''}`], L);
-      const t = find([`t:${sg.targetFieldId}`], R);
-      if (!a || !t) continue;
-      const segs: Seg[] = [{ id: `sg-${sg.id}`, d: curve(xs, a.y, xt, t.y), dim: a.dim || t.dim }];
-      if (sg.conflict) {
-        const ods = datasets.find((d) => d.id === sg.conflict!.datasetId);
-        const o = find([`s:${sg.conflict.sourceFieldId}`, `sd:${ods?.id ?? ''}`], L);
-        if (o)
-          segs.push({
-            id: `sg-${sg.id}-alt`,
-            d: curve(xs, o.y, xt, t.y),
-            dim: o.dim || t.dim,
-            alt: true,
-          });
-      }
-      next.push({
-        key: `sg-${sg.id}`,
-        kind: 'suggestion',
-        targetFieldId: sg.targetFieldId,
-        segs,
-        line: BAND_STYLE[confidenceBand(sg.score)].line,
-        pill: {
-          x: (xs + xt) / 2,
-          y: (a.y + t.y) / 2,
-          label: `${sg.conflict ? '⚠ ' : ''}${pct(sg.score)} · ${sg.origin === 'rules' ? 'Rules' : sg.origin === 'ai' ? 'AI' : 'Rules+AI'}`,
-        },
-      });
-    }
     const key = (list: Item[]) =>
       JSON.stringify(
         list.map((i) => [
@@ -393,7 +282,6 @@ export function MapperPanel({
           ]),
           i.pill && [round(i.pill.x), round(i.pill.y), i.pill.label],
           i.warn && [round(i.warn.x), round(i.warn.y), i.warn.count],
-          i.line,
         ]),
       );
     setItems((cur) => (key(cur) === key(next) ? cur : next));
@@ -506,93 +394,6 @@ export function MapperPanel({
     return () => window.removeEventListener('keydown', onKey);
   }, [removeSelected]);
 
-  const accept = (list: MappingSuggestion[]) => {
-    const r = acceptSuggestions(list);
-    setMessage({
-      intent: 'info',
-      text: `${r.applied} mapping${r.applied === 1 ? '' : 's'} created${r.skipped ? `, ${r.skipped} skipped` : ''}.`,
-    });
-  };
-  const suggest = () => {
-    if (!structure) return;
-    const found = suggestMappings(project, {
-      structureId: structure.id,
-      data: state.data,
-      ...(scope ? { datasetIds: scope, includeOthers: alsoOthers } : {}),
-    });
-    setSuggestions(found);
-    setMessage({
-      intent: 'info',
-      text:
-        found.length === 0
-          ? 'No suggestions: nothing unmapped looks like a source field.'
-          : `${found.length} suggestion${found.length === 1 ? '' : 's'}. Nothing is mapped until you accept it.`,
-    });
-  };
-  const abortRef = useRef<AbortController | undefined>(undefined);
-  const askAi = async () => {
-    if (!structure) return;
-    const ctl = new AbortController();
-    abortRef.current = ctl;
-    let settings = aiSettings;
-    // One click is enough: with Ollama and no model chosen yet, the settings are found and saved here.
-    if (!aiReady(settings)) {
-      if (settings.provider === 'anthropic') {
-        setShowAi(true);
-        return;
-      }
-      setAiBusy('Looking for an Ollama model…');
-      try {
-        settings = await autoConfigure(settings, ctl.signal);
-        setAiSettings(settings);
-      } catch (e) {
-        setAiBusy(undefined);
-        setMessage({
-          intent: 'error',
-          text: `${e instanceof AiError ? e.message : 'The AI settings could not be found.'} Check the address or choose a model in AI settings.`,
-        });
-        setShowAi(true);
-        return;
-      }
-    }
-    const rules = suggestMappings(project, {
-      structureId: structure.id,
-      data: state.data,
-      ...(scope ? { datasetIds: scope, includeOthers: alsoOthers } : {}),
-    });
-    // The rule-based suggestions show at once; the model's answers are merged in when they arrive.
-    setSuggestions(rules);
-    setAiBusy(`Asking ${settings.model}…`);
-    try {
-      const r = await aiSuggest({
-        project,
-        structureId: structure.id,
-        rules,
-        settings,
-        ...(scope && !alsoOthers ? { datasetIds: scope } : {}),
-        signal: ctl.signal,
-        onProgress: (done, total) =>
-          setAiBusy(
-            done < total ? `Asking ${settings.model}… batch ${done + 1} of ${total}` : undefined,
-          ),
-      });
-      setSuggestions(r.suggestions);
-      const n = r.suggestions.filter((x) => x.origin !== 'rules').length;
-      setMessage({
-        intent: 'info',
-        text: `${r.suggestions.length} suggestion${r.suggestions.length === 1 ? '' : 's'} (${n} with AI, ${settings.model}). Nothing is mapped until you accept it.${r.problems.length ? ` ${r.problems.length} answer${r.problems.length === 1 ? '' : 's'} could not be used.` : ''}`,
-      });
-    } catch (e) {
-      setMessage({
-        intent: 'error',
-        text: `${e instanceof AiError ? e.message : 'The AI suggestions failed.'} The rule-based suggestions are still available.`,
-      });
-    } finally {
-      setAiBusy(undefined);
-      abortRef.current = undefined;
-    }
-  };
-
   const fieldName = (fieldId: string): string => {
     for (const d of datasets) {
       const f = d.fields.find((x) => x.id === fieldId);
@@ -626,36 +427,6 @@ export function MapperPanel({
             ))}
           </Select>
         </label>
-        <Button appearance="primary" onClick={suggest}>
-          Suggest mappings
-        </Button>
-        {scope && (
-          <Checkbox
-            label="Also look in other structures"
-            checked={alsoOthers}
-            onChange={(_, d) => setAlsoOthers(d.checked === true)}
-          />
-        )}
-        <Button
-          onClick={() => void askAi()}
-          disabled={aiBusy !== undefined}
-          data-testid="ai-suggest"
-        >
-          AI suggest
-        </Button>
-        <Button appearance="subtle" onClick={() => setShowAi(true)}>
-          AI settings
-        </Button>
-        {aiBusy && (
-          <>
-            <Text className={s.muted} data-testid="ai-busy">
-              {aiBusy}
-            </Text>
-            <Button size="small" onClick={() => abortRef.current?.abort()} data-testid="ai-stop">
-              Stop
-            </Button>
-          </>
-        )}
         <Text className={s.muted}>
           Drag a source field onto a target field, or click one and then the other. Click a target
           field or a line to edit or remove its mapping.
@@ -729,9 +500,8 @@ export function MapperPanel({
                 No source files yet. Add them in Sources.
               </Text>
             )}
-            {orderedDatasets.map((d) => {
-              const outside = scope !== undefined && !scope.includes(d.id);
-              const isCollapsed = outside ? !openOutside.has(d.id) : collapsed.has(d.id);
+            {datasets.map((d) => {
+              const isCollapsed = collapsed.has(d.id);
               const shown = visibleSources(d);
               return (
                 <div key={d.id}>
@@ -742,7 +512,7 @@ export function MapperPanel({
                     aria-expanded={!isCollapsed}
                     data-testid={`dataset-group-${d.name}`}
                     onClick={() =>
-                      (outside ? setOpenOutside : setCollapsed)((cur) => {
+                      setCollapsed((cur) => {
                         const next = new Set(cur);
                         if (next.has(d.id)) next.delete(d.id);
                         else next.add(d.id);
@@ -755,16 +525,6 @@ export function MapperPanel({
                     <Text size={200} className={s.muted}>
                       {d.fields.length} fields
                     </Text>
-                    {scope && (
-                      <Badge
-                        size="small"
-                        appearance={d.id === driverId ? 'filled' : 'outline'}
-                        color={d.id === driverId ? 'brand' : 'subtle'}
-                        data-testid={`scope-tag-${d.name}`}
-                      >
-                        {d.id === driverId ? 'Driver' : outside ? 'Other structure' : 'Joined'}
-                      </Badge>
-                    )}
                   </button>
                   {!isCollapsed &&
                     shown.map((f) => {
@@ -887,21 +647,7 @@ export function MapperPanel({
                       testId={`tgt-conflict-${f.id}`}
                     />
                   )}
-                  {r &&
-                    (r.mapping ? (
-                      <ConfidenceCapsule
-                        fieldName={f.displayName}
-                        fieldId={f.id}
-                        confidence={confOf.get(f.id)}
-                        conflicts={conflictsByField.get(f.id)?.length ?? 0}
-                        onResolve={() => {
-                          setSelectedTarget(f.id);
-                          setSelectedSource(undefined);
-                        }}
-                      />
-                    ) : (
-                      <StatusPill status={r.status} />
-                    ))}
+                  {r && <StatusPill status={r.status} />}
                 </div>
               );
             })}
@@ -917,20 +663,17 @@ export function MapperPanel({
           <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
             {items.map((it) =>
               it.segs.map((g) => {
-                const suggestion = it.kind === 'suggestion';
-                const on = selectedTarget === it.targetFieldId || focusSuggestion === it.key;
+                const on = selectedTarget === it.targetFieldId;
                 return (
                   <g key={g.id} opacity={g.dim ? 0.35 : 1}>
                     <path
                       d={g.d}
                       fill="none"
-                      stroke={suggestion ? (it.line ?? '#b36b00') : (it.line ?? '#3b6ea5')}
-                      strokeWidth={on ? 3 : g.alt ? 1.2 : 1.6}
-                      strokeDasharray={g.alt ? '2 5' : suggestion ? '6 4' : undefined}
-                      opacity={g.alt ? 0.65 : 1}
-                      data-testid={`${suggestion ? (g.alt ? 'suggest-alt' : 'suggest') : 'link'}-${it.targetFieldId}`}
+                      stroke="#3b6ea5"
+                      strokeWidth={on ? 3 : 1.6}
+                      data-testid={`link-${it.targetFieldId}`}
                     />
-                    {!suggestion && (
+                    {
                       <path
                         d={g.d}
                         fill="none"
@@ -942,7 +685,7 @@ export function MapperPanel({
                           setSelectedSource(undefined);
                         }}
                       />
-                    )}
+                    }
                   </g>
                 );
               }),
@@ -994,19 +737,15 @@ export function MapperPanel({
                   style={{
                     left: it.pill.x,
                     top: it.pill.y,
-                    border: `1px solid ${it.kind === 'suggestion' ? (it.line ?? '#b36b00') : '#3b6ea5'}`,
-                    background: it.kind === 'suggestion' ? '#fff8e6' : '#eaf3fb',
+                    border: '1px solid #3b6ea5',
+                    background: '#eaf3fb',
                     color: '#222',
                   }}
                   title={it.pill.label}
-                  data-testid={`${it.kind === 'suggestion' ? 'score' : 'fn'}-${it.targetFieldId}`}
+                  data-testid={`fn-${it.targetFieldId}`}
                   onClick={() => {
-                    if (it.kind === 'suggestion')
-                      setFocusSuggestion((c) => (c === it.key ? undefined : it.key));
-                    else {
-                      setSelectedTarget(it.targetFieldId);
-                      setSelectedSource(undefined);
-                    }
+                    setSelectedTarget(it.targetFieldId);
+                    setSelectedSource(undefined);
                   }}
                 >
                   {it.pill.label}
@@ -1023,16 +762,6 @@ export function MapperPanel({
           <Text className={s.muted}>
             {selRow.mapping ? `${selRow.source} · ${selRow.transformation}` : 'Not mapped yet'}
           </Text>
-          {selRow.mapping && confOf.get(selRow.fieldId)?.kind === 'matched' && (
-            <Text style={{ flexBasis: '100%' }} data-testid="panel-confidence">
-              Match confidence:{' '}
-              <ConfidenceTag score={(confOf.get(selRow.fieldId) as { score: number }).score} /> —{' '}
-              {(confOf.get(selRow.fieldId) as { reasons: string[] }).reasons.join('; ')}
-              {(confOf.get(selRow.fieldId) as { band: string }).band === 'low'
-                ? '. Check that this is the right source field.'
-                : ''}
-            </Text>
-          )}
           {(conflictsByField.get(selRow.fieldId) ?? []).map((c) => (
             <Text
               key={c.id}
@@ -1068,133 +797,6 @@ export function MapperPanel({
           )}
         </div>
       )}
-
-      {suggestions !== undefined && (
-        <div className={s.panel} style={{ display: 'block' }} data-testid="suggestions">
-          <div className={s.suggestion} style={{ borderBottom: 'none' }}>
-            <Text weight="semibold">Suggested mappings ({openSuggestions.length})</Text>
-            <Button
-              size="small"
-              disabled={
-                openSuggestions.filter((x) => x.score >= STRONG && !x.conflict).length === 0
-              }
-              onClick={() =>
-                accept(openSuggestions.filter((x) => x.score >= STRONG && !x.conflict))
-              }
-            >
-              Accept all High ({pct(STRONG)} or more, no conflict)
-            </Button>
-            <Button size="small" appearance="transparent" onClick={() => setSuggestions(undefined)}>
-              Close
-            </Button>
-          </div>
-          {openSuggestions.length === 0 && (
-            <Text className={s.muted}>No open suggestions for this structure.</Text>
-          )}
-          {openSuggestions.map((x) => {
-            const target = structure?.fields.find((f) => f.id === x.targetFieldId);
-            return (
-              <div
-                key={x.id}
-                className={s.suggestion}
-                data-testid={`suggestion-${x.targetFieldId}`}
-                style={
-                  focusSuggestion === `sg-${x.id}`
-                    ? { background: tokens.colorBrandBackground2 }
-                    : undefined
-                }
-              >
-                <Text>
-                  {fieldName(x.sourceFieldId)} → <b>{target?.displayName ?? x.targetFieldId}</b>
-                </Text>
-                <ConfidenceTag score={x.score} testId={`confidence-${x.targetFieldId}`} />
-                <OriginTag origin={x.origin} testId={`origin-${x.targetFieldId}`} />
-                {x.conflict && (
-                  <ConflictTag
-                    count={1}
-                    title={`${x.conflict.origin === 'ai' ? 'AI' : 'Rules'} prefer ${fieldName(x.conflict.sourceFieldId)} (${pct(x.conflict.score)})`}
-                    testId={`sg-conflict-${x.targetFieldId}`}
-                  />
-                )}
-                <Text size={200} className={s.muted} style={{ flex: 1 }}>
-                  {x.reasons.join('; ')}
-                  {x.alternatives.length > 0 &&
-                    ` · also: ${x.alternatives.map((a) => fieldName(a.sourceFieldId)).join(', ')}`}
-                </Text>
-                <Button size="small" appearance="primary" onClick={() => accept([x])}>
-                  Accept
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() => setSuggestions((cur) => cur?.filter((y) => y.id !== x.id))}
-                >
-                  Reject
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <AiSettingsDialog
-        key={showAi ? 'open' : 'closed'}
-        open={showAi}
-        settings={aiSettings}
-        onClose={() => setShowAi(false)}
-        onSave={setAiSettings}
-      />
     </div>
-  );
-}
-
-/** The mapped state of a target field, coloured by how well the mapping matches. Click it to look at the mapping. */
-function ConfidenceCapsule({
-  fieldName,
-  fieldId,
-  confidence,
-  conflicts,
-  onResolve,
-}: {
-  fieldName: string;
-  fieldId: string;
-  confidence: MappingConfidence | undefined;
-  conflicts: number;
-  onResolve: () => void;
-}) {
-  const matched = confidence?.kind === 'matched' ? confidence : undefined;
-  const band = matched ? BAND_STYLE[matched.band] : undefined;
-  const text = matched
-    ? `Mapped · ${Math.round(matched.score * 100)}% ${band!.label}`
-    : 'Mapped · Manual';
-  const label = `${text}${conflicts > 0 ? ` · ${conflicts} ${conflicts === 1 ? 'conflict' : 'conflicts'}` : ''}`;
-  return (
-    <button
-      type="button"
-      data-testid={`capsule-${fieldId}`}
-      data-band={matched ? matched.band : 'manual'}
-      aria-label={`Resolve ${fieldName}: ${label}`}
-      title={
-        matched
-          ? `Click to review: ${matched.reasons.join('; ')}`
-          : 'Your own design. Click to open.'
-      }
-      onClick={(e) => {
-        e.stopPropagation();
-        onResolve();
-      }}
-      style={{
-        border: `1px solid ${band?.line ?? '#3b6ea5'}`,
-        background: band?.bg ?? '#E5EAFB',
-        color: band?.color ?? '#1F3A8A',
-        borderRadius: 999,
-        padding: '2px 10px',
-        fontSize: 12,
-        fontWeight: 600,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {text}
-      {conflicts > 0 ? ' ⚠' : ''}
-    </button>
   );
 }

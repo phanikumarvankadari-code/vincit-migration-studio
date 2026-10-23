@@ -1,5 +1,7 @@
 # M17 — Structure pairing (SPEC-037)
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: nothing; the cases below describe the removed work.
+
 The Map stage starts with structures: which source dataset feeds which target structure, even when the names differ. Fields come second, in the scope of the pair. A confirmed pair is the structure's driver (`TargetStructure.generation`); helpers are the datasets joined to the driver.
 
 | Case | Proves |

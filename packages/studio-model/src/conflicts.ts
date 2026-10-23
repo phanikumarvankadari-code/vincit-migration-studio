@@ -4,8 +4,7 @@ import type { DataType, Project } from '@mms/mapping-core';
  * Things in a mapping that deserve a second look, worked out from the project itself (nothing is stored).
  * A conflict never blocks anything: a person decides.
  */
-export type ConflictKind =
-  'typeMismatch' | 'lengthOverflow' | 'sourceReused' | 'sourceEmpty' | 'suggestionDisagree';
+export type ConflictKind = 'typeMismatch' | 'lengthOverflow' | 'sourceReused' | 'sourceEmpty';
 
 export interface MappingConflict {
   id: string;
@@ -18,19 +17,9 @@ export interface MappingConflict {
   message: string;
 }
 
-/** The part of a suggestion that matters here (so this package does not depend on the suggestion engine). */
-export interface SuggestionLike {
-  targetStructureId: string;
-  targetFieldId: string;
-  sourceFieldId: string;
-  score: number;
-  conflict?: { sourceFieldId: string; score: number; origin: 'rules' | 'ai' } | undefined;
-}
-
 export interface ConflictOptions {
   /** Share of rows with a value, 0 to 100, by source field ID (from the profiler). Omit when no rows are loaded. */
   fill?: ReadonlyMap<string, number> | Readonly<Record<string, number>>;
-  suggestions?: readonly SuggestionLike[];
 }
 
 const NUMERIC: ReadonlySet<DataType> = new Set(['integer', 'decimal']);
@@ -156,22 +145,6 @@ export function detectConflicts(
     }
   }
 
-  const mapped = new Set(project.mappingDefinition.mappings.map((m) => m.targetFieldId as string));
-  for (const s of options.suggestions ?? []) {
-    if (!s.conflict || mapped.has(s.targetFieldId)) continue;
-    const field = project.targetDefinition?.structures
-      .flatMap((x) => x.fields)
-      .find((f) => f.id === s.targetFieldId);
-    out.push({
-      id: `suggest:${s.targetFieldId}`,
-      kind: 'suggestionDisagree',
-      severity: 'warning',
-      structureId: s.targetStructureId,
-      targetFieldIds: [s.targetFieldId],
-      sourceFieldIds: [s.sourceFieldId, s.conflict.sourceFieldId],
-      message: `Suggestions disagree for ${field?.displayName ?? s.targetFieldId}: ${label(s.sourceFieldId)} (${Math.round(s.score * 100)}%) or ${label(s.conflict.sourceFieldId)} (${Math.round(s.conflict.score * 100)}%, ${s.conflict.origin === 'ai' ? 'AI' : 'rules'}).`,
-    });
-  }
   return out;
 }
 

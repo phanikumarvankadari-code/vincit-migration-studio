@@ -21,7 +21,6 @@ import type {
 } from '@mms/studio-model';
 import { useMemo } from 'react';
 import { useStudio } from '../context';
-import { ValueSuggestions } from './ValueSuggestions';
 import { SourceSelect } from './SourceSelect';
 
 const useStyles = makeStyles({
@@ -188,31 +187,13 @@ export function DirectForm({
 export function ConstantForm({
   draft,
   onChange,
-  target,
 }: {
   draft: Extract<MappingDraft, { type: 'constant' }>;
   onChange: (d: MappingDraft) => void;
-  /** The target field this value is for, so values can be suggested. */
-  target?: { structureId: string; fieldId: string; datatype: string };
 }) {
   const s = useStyles();
   return (
     <div className={s.stack}>
-      {target && (
-        <ValueSuggestions
-          structureId={target.structureId}
-          fieldId={target.fieldId}
-          datatype={target.datatype}
-          onUse={(value) =>
-            onChange({
-              ...draft,
-              value,
-              blank: false,
-              ...(target.datatype !== 'unknown' ? { datatype: target.datatype as DataType } : {}),
-            })
-          }
-        />
-      )}
       <label>
         <Text block weight="semibold">
           Value

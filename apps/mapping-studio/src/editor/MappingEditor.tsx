@@ -173,17 +173,7 @@ function EditorBody({
           )}
 
           {draft?.type === 'direct' && <DirectForm draft={draft} onChange={setDraft} />}
-          {draft?.type === 'constant' && (
-            <ConstantForm
-              draft={draft}
-              onChange={setDraft}
-              target={{
-                structureId: row.structureId,
-                fieldId: row.fieldId,
-                datatype: row.datatype,
-              }}
-            />
-          )}
+          {draft?.type === 'constant' && <ConstantForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'lookup' && <LookupForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'conditional' && <ConditionForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'routine' && <RoutineForm draft={draft} onChange={setDraft} />}

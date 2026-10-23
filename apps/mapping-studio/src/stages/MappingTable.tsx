@@ -16,7 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { filterRows, type MappingRow, type MappingStatus, type RowFilter } from '@mms/studio-model';
 import { useMemo, useState } from 'react';
-import { ConfidenceTag, ConflictTag, OriginTag } from '../components/confidence';
+import { ConflictTag } from '../components/confidence';
 import { useStudio } from '../context';
 
 const useStyles = makeStyles({
@@ -77,21 +77,7 @@ export function MappingTable({
   onHardCode?: (r: MappingRow) => void;
 }) {
   const s = useStyles();
-  const {
-    state,
-    conflictsByField,
-    suggestions,
-    acceptSuggestions,
-    setSuggestions,
-    deleteMappings,
-  } = useStudio();
-  const sourceLabel = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const sd of state.project.sourceDefinitions)
-      for (const ds of sd.datasets)
-        for (const f of ds.fields) m.set(f.id, `${ds.name}.${f.displayName}`);
-    return m;
-  }, [state.project.sourceDefinitions]);
+  const { conflictsByField, deleteMappings } = useStudio();
   const [search, setSearch] = useState(filter.search ?? '');
   const [onlyConflicts, setOnlyConflicts] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -99,10 +85,6 @@ export function MappingTable({
   const shown = useMemo(
     () => filterRows(rows, filter).filter((r) => !onlyConflicts || conflictsByField.has(r.fieldId)),
     [rows, filter, onlyConflicts, conflictsByField],
-  );
-  const suggestionOf = useMemo(
-    () => new Map((suggestions ?? []).map((x) => [x.targetFieldId, x] as const)),
-    [suggestions],
   );
   const mappedShown = shown.filter((r) => r.mapping);
   const pickedRows = mappedShown.filter((r) => picked.has(r.key));
@@ -198,7 +180,6 @@ export function MappingTable({
               <th>Required</th>
               <th>Source / value</th>
               <th>Transformation</th>
-              <th>Suggestion</th>
               <th>Conflicts</th>
               <th>Status</th>
               <th>Actions</th>
@@ -207,7 +188,6 @@ export function MappingTable({
           <tbody>
             {shown.map((r) => {
               const conflicts = conflictsByField.get(r.fieldId) ?? [];
-              const sg = r.mapping ? undefined : suggestionOf.get(r.fieldId);
               return (
                 <tr
                   key={r.key}
@@ -260,39 +240,6 @@ export function MappingTable({
                   </td>
                   <td>{r.source}</td>
                   <td>{r.transformation}</td>
-                  <td data-testid={`suggestion-cell-${r.structureName}-${r.fieldName}`}>
-                    {sg && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span>{sourceLabel.get(sg.sourceFieldId) ?? sg.sourceFieldId}</span>
-                        <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          <ConfidenceTag score={sg.score} />
-                          <OriginTag origin={sg.origin} />
-                        </span>
-                        <span
-                          onClick={(e) => e.stopPropagation()}
-                          style={{ display: 'flex', gap: 6 }}
-                        >
-                          <Button
-                            size="small"
-                            appearance="primary"
-                            aria-label={`Accept suggestion for ${r.fieldName}`}
-                            onClick={() => acceptSuggestions([sg])}
-                          >
-                            Accept
-                          </Button>
-                          <Button
-                            size="small"
-                            aria-label={`Reject suggestion for ${r.fieldName}`}
-                            onClick={() =>
-                              setSuggestions((cur) => cur?.filter((x) => x.id !== sg.id))
-                            }
-                          >
-                            Reject
-                          </Button>
-                        </span>
-                      </div>
-                    )}
-                  </td>
                   <td data-testid={`conflicts-${r.structureName}-${r.fieldName}`}>
                     {conflicts.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
