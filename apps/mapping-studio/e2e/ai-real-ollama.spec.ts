@@ -75,4 +75,43 @@ test.describe('Real Ollama (opt in)', () => {
     await expect(ai).toContainText(/\d{4}-\d{2}-\d{2}/);
     await expect(ai.getByRole('button', { name: 'Use this value' })).toBeEnabled();
   });
+
+  test('AI suggest pairs matches the Profit Center structures to their source files', async ({
+    page,
+  }) => {
+    const reachable = await fetch('http://127.0.0.1:11434/api/tags').then(
+      (r) => r.ok,
+      () => false,
+    );
+    test.skip(!reachable, 'Ollama is not running on 127.0.0.1:11434');
+
+    await openApp(page);
+    await addProfitCenterSources(page, true);
+    await loadTarget(page);
+    await goToStage(page, 'map');
+    await page.getByRole('tab', { name: '1 · Structures' }).click();
+    const started = Date.now();
+    await page.getByTestId('ai-suggest-pairs').click();
+    await expect(page.getByTestId('pair-message')).toContainText(/suggestion|pair/i, {
+      timeout: 540_000,
+    });
+    console.log(`AI suggest pairs took ${Math.round((Date.now() - started) / 1000)} s`);
+    await expect(page.getByRole('dialog', { name: 'AI settings' })).toHaveCount(0);
+
+    // the rules alone already know the answer; the model must not make it worse
+    const pc = page.getByTestId('pair-suggestion-Profit Center');
+    await expect(pc).toContainText('CEPC → Profit Center');
+    await expect(page.getByTestId('pair-suggestion-Company Codes')).toContainText(
+      'CEPC_BUKRS → Company Codes',
+    );
+    await expect(page.getByTestId('pair-confidence-Profit Center')).toContainText(/\d+% /);
+    console.log(
+      `pairs: ${await page
+        .getByTestId('pair-suggestions')
+        .innerText()
+        .then((t) => t.replace(/\s+/g, ' '))}`,
+    );
+    await pc.getByRole('button', { name: 'Accept' }).click();
+    await expect(page.getByTestId('paired-Profit Center')).toBeVisible();
+  });
 });

@@ -19,3 +19,9 @@ Browser tests (`apps/mapping-studio/e2e/structure-pairing.spec.ts`, Ollama mocke
 - Fields step: the pair first, datasets of other structures closed and tagged, joined datasets tagged Joined, AI questions limited to the pair; no pair gives a hint with a button to the Structures step.
 
 Fixed on the way: `aiSuggest` did not pass the pair's datasets to the prompt builder, so the model was asked about every dataset.
+
+## M17b — real Ollama, tidy reasons
+
+- `apps/mapping-studio/e2e/ai-real-ollama.spec.ts` has an opt-in test for pair suggestions on the real Profit Center files (`MMS_REAL_OLLAMA=1 npm run e2e -- ai-real-ollama`). With `gemma4:latest` it answers in about 5 s; CEPC drives Profit Center (95%, Rules and AI), CEPC_BUKRS drives Company Codes (80%), CEPCT drives Translation.
+- Ids the model repeats in its reason (d1, t2) are shown as dataset and structure names.
+- Playwright runs with 5 workers; fewer load-related timeouts in the full run.

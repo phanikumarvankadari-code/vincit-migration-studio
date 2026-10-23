@@ -160,6 +160,8 @@ export interface StructureAiPrompt {
   user: string;
   targets: ReadonlyMap<string, string>;
   datasets: ReadonlyMap<string, string>;
+  /** Short id to display name, to turn ids the model repeats in its reason back into names. */
+  names?: ReadonlyMap<string, string>;
 }
 
 export interface StructureAiPair {
@@ -230,12 +232,16 @@ export function buildStructureAiPrompt(
     user: JSON.stringify({ targets: tLines, datasets: dsLines, hints: hintLines }),
     targets,
     datasets,
+    names: new Map([
+      ...dsLines.map((d) => [d.id, d.name] as const),
+      ...tLines.map((t) => [t.id, t.name] as const),
+    ]),
   };
 }
 
 export function parseStructureAiResponse(
   text: string,
-  prompt: Pick<StructureAiPrompt, 'targets' | 'datasets'>,
+  prompt: Pick<StructureAiPrompt, 'targets' | 'datasets'> & Pick<StructureAiPrompt, 'names'>,
 ): { items: StructureAiPair[]; problems: string[] } {
   const tryParse = (t: string): unknown => {
     try {
@@ -296,7 +302,13 @@ export function parseStructureAiResponse(
       driverDatasetId: driver ?? null,
       helperDatasetIds: [...new Set(helpers)],
       confidence: Math.max(0, Math.min(1, Math.round(conf * 100) / 100)),
-      reason: typeof r.reason === 'string' ? r.reason.trim().slice(0, 200) : '',
+      reason:
+        typeof r.reason === 'string'
+          ? r.reason
+              .replace(/\b[dt]\d+\b/g, (id) => prompt.names?.get(id) ?? id)
+              .trim()
+              .slice(0, 200)
+          : '',
     });
   }
   return { items, problems };
