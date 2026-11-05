@@ -1,4 +1,9 @@
-import { importCsv, importXlsx, listXlsxSheets, type ImportedSource } from '@mms/file-import';
+import {
+  importCsv,
+  importWorkbook,
+  listWorkbookSheets,
+  type ImportedSource,
+} from '@mms/file-import';
 import { toBase64, type Diagnostic, type Result, type TargetDefinition } from '@mms/mapping-core';
 import {
   detectTargetLayout,
@@ -39,7 +44,7 @@ export function readTargetTable(
       return t ? [t.fieldList] : undefined;
     })();
   return isXlsx(file)
-    ? importXlsx(file.content, {
+    ? importWorkbook(file.content, {
         fileName: file.name,
         headerRow,
         ...(only ? { sheets: only } : {}),
@@ -57,7 +62,7 @@ const TEMPLATE_TECHNICAL_ROW = 5;
  */
 function templateSheets(file: TargetFile): { fieldList: string; others: string[] } | undefined {
   if (!isXlsx(file)) return undefined;
-  const list = listXlsxSheets(file.content);
+  const list = listWorkbookSheets(file.content);
   if (!list.ok) return undefined;
   const visible = list.value.filter((x) => !x.hidden).map((x) => x.name);
   const fieldList = visible.find((n) => n.trim().toLowerCase() === 'field list');
@@ -90,7 +95,7 @@ function attachTemplate(
       );
       return st;
     }
-    const table = importXlsx(file.content, {
+    const table = importWorkbook(file.content, {
       fileName: file.name,
       sheets: [sheet],
       headerRow: TEMPLATE_TECHNICAL_ROW,

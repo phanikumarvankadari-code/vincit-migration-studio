@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { autoImportTarget, previewTarget, readTargetTable } from '../src/index.js';
 import { fromBase64 } from '@mms/mapping-core';
-import { ok, targetFile, templateFile } from './helpers.js';
+import { fixedAssetTemplateFile, ok, targetFile, templateFile } from './helpers.js';
 
 describe('target template workbook (Field List + one data sheet per structure)', () => {
   it('takes the structures from Field List, ignores Introduction, and connects each structure to its data sheet', () => {
@@ -42,6 +42,35 @@ describe('target template workbook (Field List + one data sheet per structure)',
     expect(t.structures.map(strip)).toEqual(old.structures.map(strip));
     expect(old.template).toBeUndefined();
     expect(old.structures.every((s) => s.templateSheet === undefined)).toBe(true);
+  });
+});
+
+describe('target template in Excel 2003 XML (SAP migration cockpit download)', () => {
+  it('reads the structures from Field List and connects every structure to its data sheet', () => {
+    const p = ok(autoImportTarget(fixedAssetTemplateFile(), 'Fixed asset'));
+    const names = p.target.structures.map((s) => s.name);
+    expect(names).toEqual([
+      'General',
+      'Origin',
+      'Inventory',
+      'Allocations',
+      'Account Assignment',
+      'Ledger',
+      'Valuation',
+      'Time-Based Valuation',
+      'Local - Time-Independent',
+      'Local - Time-Dependent',
+      'Local-Time-Dependent f.Validtn',
+    ]);
+    expect(p.target.structures.every((s) => s.templateSheet === s.name)).toBe(true);
+    expect(p.target.structures[0]!.fields).toHaveLength(14);
+    expect(p.target.structures[0]!.fields.slice(0, 3).map((f) => f.technicalName)).toEqual([
+      'BUKRS',
+      'ANLN1',
+      'ANLN2',
+    ]);
+    // every field of every structure has a column in its data sheet
+    expect(p.diagnostics.filter((d) => d.code.startsWith('TARGET_TEMPLATE'))).toEqual([]);
   });
 });
 

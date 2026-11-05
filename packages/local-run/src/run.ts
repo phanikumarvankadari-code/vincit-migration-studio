@@ -36,7 +36,7 @@ export interface LocalRunOptions {
 
 export interface OutputFile {
   name: string;
-  format: 'csv' | 'xlsx' | 'json';
+  format: 'csv' | 'xlsx' | 'xml' | 'json';
   kind: 'output' | 'errors' | 'diagnostics' | 'summary';
   targetStructureId?: string;
   /** Data rows in the file (not counting the header). */
@@ -342,7 +342,7 @@ export function runLocal(
     if (filled.ok) {
       files.push({
         name: unique(template.fileName.replace(/[\\/:*?"<>|]/g, '_')),
-        format: 'xlsx',
+        format: /\.xml$/i.test(template.fileName) ? 'xml' : 'xlsx',
         kind: 'output',
         rows: templateSheets.reduce((n, t) => n + t.rows.length, 0),
         content: filled.value.bytes,

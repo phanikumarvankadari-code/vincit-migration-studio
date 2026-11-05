@@ -55,3 +55,8 @@ export const smallSources = (): { cepc: ImportedSource; bukrs: ImportedSource } 
     ['Profit Center,Company Code', 'P100,FI01', 'P100,FI02', 'P300,NO01'].join('\n'),
   ),
 });
+
+export const fixedAssetTemplateFile = () => ({
+  name: 'fixed_asset_template.xml',
+  content: fixtureBytes('../fixed-asset/target/fixed_asset_template.xml'),
+});
