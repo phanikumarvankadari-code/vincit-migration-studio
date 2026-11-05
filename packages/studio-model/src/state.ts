@@ -72,6 +72,16 @@ export type StudioAction =
       structureId: string;
       generation: RowGeneration | null;
       parent: ParentLink | null;
+      /** Default date layout of the structure. Left as it is when absent, removed when null. */
+      dateFormat?: string | null;
+      at: string;
+    }
+  | {
+      type: 'targetFieldFormat';
+      structureId: string;
+      fieldId: string;
+      /** The date layout the field expects; null removes it. */
+      dateFormat: string | null;
       at: string;
     }
   | {
@@ -313,6 +323,11 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
           ...s,
           ...(old?.generation && !s.generation ? { generation: old.generation } : {}),
           ...(old?.parent && !s.parent ? { parent: old.parent } : {}),
+          ...(old?.dateFormat && !s.dateFormat ? { dateFormat: old.dateFormat } : {}),
+          fields: s.fields.map((f) => {
+            const was = old?.fields.find((x) => x.id === f.id)?.dateFormat;
+            return was && !f.dateFormat ? { ...f, dateFormat: was } : f;
+          }),
         };
       });
       const project = pruneDangling(
@@ -329,12 +344,36 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
         const copy = { ...s };
         delete copy.generation;
         delete copy.parent;
+        if (action.dateFormat !== undefined) delete copy.dateFormat;
         return {
           ...copy,
+          ...(action.dateFormat ? { dateFormat: action.dateFormat } : {}),
           ...(action.generation ? { generation: action.generation } : {}),
           ...(action.parent ? { parent: action.parent } : {}),
         };
       });
+      return withProject(
+        state,
+        stamp({ ...state.project, targetDefinition: { ...target, structures } }, action.at),
+      );
+    }
+
+    case 'targetFieldFormat': {
+      const target = state.project.targetDefinition;
+      if (!target) return state;
+      const structures = target.structures.map((s) =>
+        s.id !== action.structureId
+          ? s
+          : {
+              ...s,
+              fields: s.fields.map((f) => {
+                if (f.id !== action.fieldId) return f;
+                const next = { ...f };
+                delete next.dateFormat;
+                return action.dateFormat ? { ...next, dateFormat: action.dateFormat } : next;
+              }),
+            },
+      );
       return withProject(
         state,
         stamp({ ...state.project, targetDefinition: { ...target, structures } }, action.at),

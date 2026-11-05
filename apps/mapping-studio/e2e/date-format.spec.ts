@@ -38,3 +38,38 @@ test.describe('Date Format transformation', () => {
     );
   });
 });
+
+test.describe('Target date format', () => {
+  test('the structure default and the field format fill in the output format of a Date Format step', async ({
+    page,
+  }) => {
+    await setUpSmallMapping(page);
+    await page
+      .getByTestId('completeness-Profit Center')
+      .getByRole('button', { name: 'Settings' })
+      .click();
+    await page.getByLabel('Default date format').fill('dd.MM.yyyy');
+    await page.getByRole('button', { name: 'Save settings' }).click();
+
+    await openEditor(page, 'Profit Center', 'Valid From');
+    await expect(page.getByLabel('Target date format')).toHaveValue('');
+    await expect(page.getByLabel('Target date format')).toHaveAttribute(
+      'placeholder',
+      'dd.MM.yyyy',
+    );
+    await page.getByLabel('Mapping type').selectOption('routine');
+    await page.getByTestId('add-date-format-step').click();
+    await expect(page.getByLabel('Step 1 output format')).toHaveValue('dd.MM.yyyy');
+
+    // the field's own format wins over the structure default
+    await page.getByRole('button', { name: 'Remove step 1' }).click();
+    await page.getByLabel('Target date format').fill('yyyyMMdd');
+    await page.getByTestId('add-date-format-step').click();
+    await expect(page.getByLabel('Step 1 output format')).toHaveValue('yyyyMMdd');
+
+    // kept after closing and reopening
+    await page.getByRole('button', { name: 'Close editor' }).click();
+    await openEditor(page, 'Profit Center', 'Valid From');
+    await expect(page.getByLabel('Target date format')).toHaveValue('yyyyMMdd');
+  });
+});

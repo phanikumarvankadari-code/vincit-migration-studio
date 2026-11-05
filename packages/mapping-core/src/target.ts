@@ -24,6 +24,8 @@ export const TargetFieldSchema = z.strictObject({
   group: z.string().optional(),
   /** Original importance text from the definition (for example "mandatory for sheet"). */
   importance: z.string().optional(),
+  /** Layout of the dates this field expects (for example yyyy-MM-dd). Overrides the structure default. */
+  dateFormat: z.string().min(1).optional(),
 });
 export type TargetField = z.infer<typeof TargetFieldSchema>;
 
@@ -53,6 +55,8 @@ export const TargetStructureSchema = z.strictObject({
   technicalName: z.string().min(1).optional(),
   /** Original importance text of the structure (for example "mandatory"). */
   importance: z.string().optional(),
+  /** Default date layout for the fields of this structure that have none of their own. */
+  dateFormat: z.string().min(1).optional(),
   fields: z.array(TargetFieldSchema),
   generation: RowGenerationSchema.optional(),
   parent: ParentLinkSchema.optional(),
@@ -65,3 +69,11 @@ export const TargetDefinitionSchema = z.strictObject({
   structures: z.array(TargetStructureSchema),
 });
 export type TargetDefinition = z.infer<typeof TargetDefinitionSchema>;
+
+/** The date layout a target field expects: its own, else the structure default. */
+export function targetDateFormat(
+  structure: Pick<TargetStructure, 'dateFormat'>,
+  field: Pick<TargetField, 'dateFormat'>,
+): string | undefined {
+  return field.dateFormat ?? structure.dateFormat;
+}

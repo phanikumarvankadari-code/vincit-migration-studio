@@ -2,6 +2,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  Input,
   MessageBar,
   MessageBarBody,
   OverlayDrawer,
@@ -85,6 +86,12 @@ function EditorBody({
   }, [row, state.project, preset]);
   const [draft, setDraft] = useState<MappingDraft | undefined>(initial.draft);
   const [locked, setLocked] = useState(initial.locked);
+  const targetStructure = state.project.targetDefinition?.structures.find(
+    (x) => x.id === row.structureId,
+  );
+  const fieldFormat = targetStructure?.fields.find((f) => f.id === row.fieldId)?.dateFormat;
+  const structureFormat = targetStructure?.dateFormat;
+  const targetFormat = fieldFormat ?? structureFormat;
   const [needsReview, setNeedsReview] = useState(row.mapping?.status === 'needsReview');
 
   const result = useMemo(
@@ -142,6 +149,31 @@ function EditorBody({
             {row.technicalName && <Badge appearance="outline">{row.technicalName}</Badge>}
           </div>
 
+          {(row.datatype === 'date' || row.datatype === 'dateTime') && (
+            <label>
+              <Text block weight="semibold">
+                Date format of this field
+              </Text>
+              <Input
+                aria-label="Target date format"
+                placeholder={structureFormat ?? 'for example yyyy-MM-dd'}
+                value={fieldFormat ?? ''}
+                onChange={(_, d) =>
+                  send({
+                    type: 'targetFieldFormat',
+                    structureId: row.structureId,
+                    fieldId: row.fieldId,
+                    dateFormat: d.value.trim() === '' ? null : d.value.trim(),
+                  })
+                }
+              />
+              <Text className={s.muted}>
+                {structureFormat ? `Empty uses the structure default (${structureFormat}). ` : ''}
+                Date Format steps start with this as their output format.
+              </Text>
+            </label>
+          )}
+
           <label>
             <Text block weight="semibold">
               Mapping type
@@ -176,7 +208,9 @@ function EditorBody({
           {draft?.type === 'constant' && <ConstantForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'lookup' && <LookupForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'conditional' && <ConditionForm draft={draft} onChange={setDraft} />}
-          {draft?.type === 'routine' && <RoutineForm draft={draft} onChange={setDraft} />}
+          {draft?.type === 'routine' && (
+            <RoutineForm draft={draft} onChange={setDraft} targetDateFormat={targetFormat} />
+          )}
 
           {result && !result.ok && (
             <MessageBar intent="warning" data-testid="editor-problems">

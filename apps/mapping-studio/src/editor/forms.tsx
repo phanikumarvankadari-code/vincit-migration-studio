@@ -551,8 +551,13 @@ function DateFormatFields({
 }
 
 /** A starting point for a routine's settings: every required setting with an empty value of the right type. */
-export function settingsTemplate(routineId: string): string {
-  if (routineId === 'date.convert') return JSON.stringify(DATE_FORMAT_DEFAULT, null, 2);
+export function settingsTemplate(routineId: string, targetDateFormat?: string): string {
+  if (routineId === 'date.convert')
+    return JSON.stringify(
+      { ...DATE_FORMAT_DEFAULT, ...(targetDateFormat ? { outputFormat: targetDateFormat } : {}) },
+      null,
+      2,
+    );
   const d = describeRoutine(routineId);
   const schema = d?.configuration as
     { properties?: Record<string, { type?: string }>; required?: string[] } | undefined;
@@ -577,9 +582,12 @@ function settingNames(routineId: string): string {
 export function RoutineForm({
   draft,
   onChange,
+  targetDateFormat,
 }: {
   draft: Extract<MappingDraft, { type: 'routine' }>;
   onChange: (d: MappingDraft) => void;
+  /** The date layout the target field expects, used to fill in Date Format steps. */
+  targetDateFormat?: string | undefined;
 }) {
   const s = useStyles();
   const { state } = useStudio();
@@ -617,7 +625,7 @@ export function RoutineForm({
                   setStep(i, {
                     ...step,
                     routineId: d.value,
-                    configuration: settingsTemplate(d.value),
+                    configuration: settingsTemplate(d.value, targetDateFormat),
                   })
                 }
               >
@@ -740,7 +748,7 @@ export function RoutineForm({
                 {
                   kind: 'routine',
                   routineId: 'date.convert',
-                  configuration: settingsTemplate('date.convert'),
+                  configuration: settingsTemplate('date.convert', targetDateFormat),
                   onError: 'stop',
                 },
               ],
