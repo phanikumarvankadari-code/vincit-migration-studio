@@ -13,10 +13,10 @@ import {
 import { call } from './helpers.js';
 
 describe('built-in routine registry', () => {
-  it('has the 26 required routines with unique IDs and a description each', () => {
+  it('has the 27 required routines with unique IDs and a description each', () => {
     const r = builtInRoutines();
-    expect(r).toHaveLength(26);
-    expect(new Set(r.map((x) => x.id)).size).toBe(26);
+    expect(r).toHaveLength(27);
+    expect(new Set(r.map((x) => x.id)).size).toBe(27);
     expect(r.every((x) => x.description.length > 20 && x.name.length > 0)).toBe(true);
     expect(Object.keys(createBuiltInRegistry()).sort()).toEqual(r.map((x) => x.id).sort());
   });
@@ -57,7 +57,7 @@ describe('built-in routine registry', () => {
 
   it('produces project routine definitions that fit the model', () => {
     const defs = builtInRoutineDefinitions();
-    expect(defs).toHaveLength(26);
+    expect(defs).toHaveLength(27);
     for (const d of defs) {
       expect(RoutineDefinitionSchema.safeParse(d).success, d.id).toBe(true);
       expect(d).toMatchObject({ scope: 'builtIn', version: '1' });

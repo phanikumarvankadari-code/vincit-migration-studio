@@ -103,6 +103,75 @@ const FormatConfig = z.strictObject({
   locale: z.literal('en').optional(),
 });
 
+type Read = { iso: string } | { code: string; message: string };
+const bad = (code: string, message: string): Read => ({ code, message });
+
+/** Reads text in an explicit layout and gives an ISO date, or the reason it is not one. */
+function readDate(value: string, format: string, pivot: number | undefined): Read {
+  const compiled = compile(format) as { parts: Part[] };
+  const source = compiled.parts
+    .map((p) => {
+      if ('lit' in p) return p.lit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return {
+        YYYY: '(\\d{4})',
+        YY: '(\\d{2})',
+        MMM: '([A-Za-z]{3})',
+        MM: '(\\d{2})',
+        M: '(\\d{1,2})',
+        DD: '(\\d{2})',
+        D: '(\\d{1,2})',
+      }[p.tok];
+    })
+    .join('');
+  const m = new RegExp(`^${source}$`).exec(value);
+  const where = `Cannot read "${value}" as a date with the layout ${format}`;
+  if (!m) return bad('DATE_INVALID_FORMAT', `${where}.`);
+  let year = 0;
+  let month = 0;
+  let day = 0;
+  let g = 1;
+  for (const p of compiled.parts) {
+    if (!('tok' in p)) continue;
+    const text = m[g++]!;
+    if (p.tok === 'YYYY') year = Number(text);
+    else if (p.tok === 'YY') year = (Number(text) <= pivot! ? 2000 : 1900) + Number(text);
+    else if (p.tok === 'MMM')
+      month = MONTHS.findIndex((n) => n.toLowerCase() === text.toLowerCase()) + 1;
+    else if (isMonth(p.tok)) month = Number(text);
+    else day = Number(text);
+  }
+  if (month === 0) return bad('DATE_INVALID', `${where}: "${m[0]}" is not a month name.`);
+  const problem = validParts(year, month, day);
+  if (problem) return bad('DATE_INVALID', `${where}: ${problem}.`);
+  return { iso: `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}` };
+}
+
+/** Writes an ISO date (already valid) in an explicit layout. */
+function writeDate(d: { y: number; m: number; d: number }, format: string): string {
+  const compiled = compile(format) as { parts: Part[] };
+  return compiled.parts
+    .map((p) => {
+      if ('lit' in p) return p.lit;
+      switch (p.tok) {
+        case 'YYYY':
+          return pad(d.y, 4);
+        case 'YY':
+          return pad(d.y % 100, 2);
+        case 'MMM':
+          return MONTHS[d.m - 1]!;
+        case 'MM':
+          return pad(d.m, 2);
+        case 'M':
+          return String(d.m);
+        case 'DD':
+          return pad(d.d, 2);
+        default:
+          return String(d.d);
+      }
+    })
+    .join('');
+}
+
 const parseDate = defineRoutine({
   id: 'date.parse',
   name: 'Parse Date',
@@ -120,43 +189,8 @@ const parseDate = defineRoutine({
         : fail('DATE_BLANK', 'A date is required but the value is blank.');
     const special = cfg.specialValues?.[value];
     if (special !== undefined) return ok(special);
-    const compiled = compile(cfg.format) as { parts: Part[] };
-    const source = compiled.parts
-      .map((p) => {
-        if ('lit' in p) return p.lit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        return {
-          YYYY: '(\\d{4})',
-          YY: '(\\d{2})',
-          MMM: '([A-Za-z]{3})',
-          MM: '(\\d{2})',
-          M: '(\\d{1,2})',
-          DD: '(\\d{2})',
-          D: '(\\d{1,2})',
-        }[p.tok];
-      })
-      .join('');
-    const m = new RegExp(`^${source}$`).exec(value);
-    const where = `Cannot read "${value}" as a date with the layout ${cfg.format}`;
-    if (!m) return fail('DATE_INVALID_FORMAT', `${where}.`);
-    let year = 0;
-    let month = 0;
-    let day = 0;
-    let g = 1;
-    for (const p of compiled.parts) {
-      if (!('tok' in p)) continue;
-      const text = m[g++]!;
-      if (p.tok === 'YYYY') year = Number(text);
-      else if (p.tok === 'YY')
-        year = (Number(text) <= cfg.twoDigitYearPivot! ? 2000 : 1900) + Number(text);
-      else if (p.tok === 'MMM')
-        month = MONTHS.findIndex((n) => n.toLowerCase() === text.toLowerCase()) + 1;
-      else if (isMonth(p.tok)) month = Number(text);
-      else day = Number(text);
-    }
-    if (month === 0) return fail('DATE_INVALID', `${where}: "${m[0]}" is not a month name.`);
-    const problem = validParts(year, month, day);
-    if (problem) return fail('DATE_INVALID', `${where}: ${problem}.`);
-    return ok(`${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`);
+    const read = readDate(value, cfg.format, cfg.twoDigitYearPivot);
+    return 'iso' in read ? ok(read.iso) : fail(read.code, read.message);
   },
 });
 
@@ -195,30 +229,7 @@ const formatDate = defineRoutine({
     const d = parseIso(value);
     if (!d)
       return fail('DATE_INVALID', `"${value}" is not an ISO date (YYYY-MM-DD). Parse it first.`);
-    const compiled = compile(cfg.format) as { parts: Part[] };
-    return ok(
-      compiled.parts
-        .map((p) => {
-          if ('lit' in p) return p.lit;
-          switch (p.tok) {
-            case 'YYYY':
-              return pad(d.y, 4);
-            case 'YY':
-              return pad(d.y % 100, 2);
-            case 'MMM':
-              return MONTHS[d.m - 1]!;
-            case 'MM':
-              return pad(d.m, 2);
-            case 'M':
-              return String(d.m);
-            case 'DD':
-              return pad(d.d, 2);
-            default:
-              return String(d.d);
-          }
-        })
-        .join(''),
-    );
+    return ok(writeDate(d, cfg.format));
   },
 });
 
@@ -269,9 +280,74 @@ const validateDate = defineRoutine({
   },
 });
 
+/** Accepts the common lowercase spelling (yyyyMMdd, dd.MM.yyyy) as well as the uppercase one. */
+const normalizeLayout = (f: string): string =>
+  f.replace(/yyyy/g, 'YYYY').replace(/yy/g, 'YY').replace(/dd/g, 'DD').replace(/d/g, 'D');
+
+const InvalidValueBehavior = z.enum(['blank', 'keep', 'error']);
+
+const convertDate = defineRoutine({
+  id: 'date.convert',
+  name: 'Date Format',
+  description:
+    'Reads a date in the input layout and writes it in the output layout (for example yyyyMMdd to yyyy-MM-dd). Dates are checked against the calendar. specialValues maps exact inputs, such as 00000000, to a fixed output or to blank. A blank value stays blank. invalidValueBehavior says what happens to a value that is not a real date: blank, keep the original, or error.',
+  family: 'date',
+  config: z
+    .strictObject({
+      inputFormat: z.string().min(1),
+      outputFormat: z.string().min(1),
+      twoDigitYearPivot: z.number().int().min(0).max(99).optional(),
+      locale: z.literal('en').optional(),
+      invalidValueBehavior: InvalidValueBehavior.default('error'),
+      specialValues: z.record(z.string(), z.string()).optional(),
+    })
+    .superRefine((c, ctx) => {
+      const inp = compile(normalizeLayout(c.inputFormat));
+      if ('error' in inp)
+        ctx.addIssue({ code: 'custom', path: ['inputFormat'], message: inp.error });
+      else {
+        const toks = inp.parts.flatMap((p) => ('tok' in p ? [p.tok] : []));
+        if (toks.includes('YY') && c.twoDigitYearPivot === undefined)
+          ctx.addIssue({
+            code: 'custom',
+            path: ['twoDigitYearPivot'],
+            message: 'is required when the input format uses a two-digit year (YY)',
+          });
+        if (toks.includes('MMM') && c.locale === undefined)
+          ctx.addIssue({
+            code: 'custom',
+            path: ['locale'],
+            message: 'is required when the format uses month names (MMM). Only "en" is supported',
+          });
+      }
+      const out = compile(normalizeLayout(c.outputFormat));
+      if ('error' in out)
+        ctx.addIssue({ code: 'custom', path: ['outputFormat'], message: out.error });
+      else if (out.parts.some((p) => 'tok' in p && p.tok === 'MMM') && c.locale === undefined)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['locale'],
+          message: 'is required when the format uses month names (MMM). Only "en" is supported',
+        });
+    }),
+  run: (cfg, { value }) => {
+    if (isBlank(value)) return ok(null);
+    const special = cfg.specialValues?.[value];
+    if (special !== undefined) return ok(special === '' ? null : special);
+    const read = readDate(value, normalizeLayout(cfg.inputFormat), cfg.twoDigitYearPivot);
+    if (!('iso' in read)) {
+      if (cfg.invalidValueBehavior === 'blank') return ok(null);
+      if (cfg.invalidValueBehavior === 'keep') return ok(value);
+      return fail(read.code, read.message);
+    }
+    return ok(writeDate(parseIso(read.iso)!, normalizeLayout(cfg.outputFormat)));
+  },
+});
+
 export const dateRoutines = (): BuiltInRoutine[] => [
   parseDate,
   formatDate,
+  convertDate,
   defaultDate,
   sapZeroDate,
   validateDate,

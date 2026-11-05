@@ -74,7 +74,7 @@ export const DRAFT_TYPES: readonly { type: DraftType; label: string; help: strin
   {
     type: 'routine',
     label: 'Routine chain',
-    help: 'Take a source field and change it step by step (dates, text, numbers, IDs).',
+    help: 'Take a source field and change it step by step: Date Format, text, numbers, IDs.',
   },
 ];
 
