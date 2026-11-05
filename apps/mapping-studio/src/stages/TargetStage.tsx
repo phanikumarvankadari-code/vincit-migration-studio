@@ -147,12 +147,12 @@ export function TargetStage() {
     <>
       <Section
         title="Target structure"
-        hint="Load a file that describes the target (for example the migration template), or type it in. The app finds the header row and columns; you can correct them."
+        hint="Load a file that describes the target (for example the SAP migration template as .xlsx or Excel .xml), or type it in. The app finds the header row and columns; you can correct them."
         actions={
           <div className={s.row}>
             <FileButton
               label="Load target structure file"
-              accept=".xlsx,.csv"
+              accept=".xlsx,.xml,.csv"
               appearance="primary"
               testId="target-file-input"
               onFiles={(f) => void loadFile(f)}

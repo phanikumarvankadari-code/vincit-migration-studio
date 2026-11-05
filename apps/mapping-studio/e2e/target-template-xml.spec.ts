@@ -20,6 +20,8 @@ test('an Excel 2003 XML target template is read and the output is written into i
   await openApp(page);
   await page.getByTestId('source-files-input').setInputFiles([ASSETS]);
   await goToStage(page, 'target');
+  // the file picker must offer .xml (setInputFiles would hide a wrong filter)
+  await expect(page.getByTestId('target-file-input')).toHaveAttribute('accept', /\.xml/);
   await page
     .getByTestId('target-file-input')
     .setInputFiles(fixture('../fixed-asset/target/fixed_asset_template.xml'));
