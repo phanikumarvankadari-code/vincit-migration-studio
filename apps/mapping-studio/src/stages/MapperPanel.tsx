@@ -493,6 +493,24 @@ export function MapperPanel({
               value={srcSearch}
               onChange={(_, d) => setSrcSearch(d.value)}
             />
+            <Button
+              size="small"
+              appearance="subtle"
+              data-testid="sources-expand-all"
+              disabled={datasets.length === 0}
+              onClick={() => setCollapsed(new Set())}
+            >
+              Expand all
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              data-testid="sources-collapse-all"
+              disabled={datasets.length === 0}
+              onClick={() => setCollapsed(new Set(datasets.map((d) => d.id)))}
+            >
+              Collapse all
+            </Button>
           </div>
           <div className={s.scroll} ref={leftRef} data-testid="source-pane">
             {datasets.length === 0 && (

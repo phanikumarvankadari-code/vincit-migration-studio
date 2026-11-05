@@ -161,6 +161,38 @@ test.describe('Two-panel mapper (SPEC-031)', () => {
     await expect(src(page, 4)).toBeVisible();
   });
 
+  test('Expand all and Collapse all open and close every source table; mapped lines stay', async ({
+    page,
+  }) => {
+    await setUpSmallMapping(page);
+    await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
+    await openVisual(page);
+    const bukrsField = page
+      .getByTestId('source-pane')
+      .locator('[data-testid^="src-f-CEPC_BUKRS"]')
+      .first();
+    await expect(src(page, 1)).toBeVisible();
+    await page.getByTestId('sources-collapse-all').click();
+    await expect(src(page, 1)).toHaveCount(0);
+    await expect(bukrsField).toHaveCount(0);
+    await expect(page.getByTestId('dataset-group-CEPC')).toBeVisible(); // only the table rows are left
+    await expect(page.getByTestId('dataset-group-CEPC_BUKRS')).toBeVisible();
+    await expect(page.getByTestId('dataset-group-CEPC')).toHaveAttribute('aria-expanded', 'false');
+    await expect(link(page, 4)).toHaveCount(1); // the mapping line is kept
+    await page.getByTestId('sources-expand-all').click();
+    await expect(src(page, 1)).toBeVisible();
+    await expect(bukrsField).toBeVisible();
+    await expect(page.getByTestId('dataset-group-CEPC_BUKRS')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    // a table collapsed by hand is opened again by Expand all
+    await page.getByTestId('dataset-group-CEPC').click();
+    await expect(src(page, 1)).toHaveCount(0);
+    await page.getByTestId('sources-expand-all').click();
+    await expect(src(page, 1)).toBeVisible();
+  });
+
   test('target fields can be searched and filtered to the unmapped ones', async ({ page }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
