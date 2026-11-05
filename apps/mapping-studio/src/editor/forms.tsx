@@ -508,6 +508,20 @@ function DateFormatFields({
           onChange={(_, d) => set('outputFormat', d.value)}
         />
       </label>
+      {/yy/i.test(String(cfg['inputFormat'] ?? '')) &&
+        !/yyyy/i.test(String(cfg['inputFormat'] ?? '')) && (
+          <label>
+            <Text block>Two-digit year pivot (years up to this are 20xx, larger are 19xx)</Text>
+            <Input
+              aria-label={`Step ${index + 1} two-digit year pivot`}
+              type="number"
+              value={String(cfg['twoDigitYearPivot'] ?? '')}
+              onChange={(_, d) =>
+                set('twoDigitYearPivot', d.value === '' ? undefined : Number(d.value))
+              }
+            />
+          </label>
+        )}
       <label>
         <Text block>Special values (one per line: input -&gt; result, empty result = blank)</Text>
         <Textarea

@@ -29,7 +29,14 @@ import {
 import { useMemo, useState } from 'react';
 import { SeverityBadge } from '../components/common';
 import { useStudio } from '../context';
-import { ConditionForm, ConstantForm, DirectForm, LookupForm, RoutineForm } from './forms';
+import {
+  ConditionForm,
+  ConstantForm,
+  DirectForm,
+  LookupForm,
+  RoutineForm,
+  settingsTemplate,
+} from './forms';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalL },
@@ -205,6 +212,34 @@ function EditorBody({
           )}
 
           {draft?.type === 'direct' && <DirectForm draft={draft} onChange={setDraft} />}
+          {draft?.type === 'direct' && (row.datatype === 'date' || row.datatype === 'dateTime') && (
+            <MessageBar intent="info" data-testid="date-direct-hint">
+              <MessageBarBody>
+                A direct mapping copies the source date as it is. If the source is written
+                differently{targetFormat ? ` from ${targetFormat}` : ''}, convert it.{' '}
+                <Button
+                  size="small"
+                  data-testid="convert-to-date-format"
+                  onClick={() =>
+                    setDraft({
+                      type: 'routine',
+                      source: draft.source,
+                      steps: [
+                        {
+                          kind: 'routine',
+                          routineId: 'date.convert',
+                          configuration: settingsTemplate('date.convert', targetFormat),
+                          onError: 'stop',
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Convert with Date Format
+                </Button>
+              </MessageBarBody>
+            </MessageBar>
+          )}
           {draft?.type === 'constant' && <ConstantForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'lookup' && <LookupForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'conditional' && <ConditionForm draft={draft} onChange={setDraft} />}

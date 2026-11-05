@@ -73,3 +73,28 @@ test.describe('Target date format', () => {
     await expect(page.getByLabel('Target date format')).toHaveValue('yyyyMMdd');
   });
 });
+
+test.describe('Date Format on a direct date mapping', () => {
+  test('a direct mapping to a date field offers the conversion; M/D/yy sources need a pivot', async ({
+    page,
+  }) => {
+    await setUpSmallMapping(page);
+    await openEditor(page, 'Profit Center', 'Valid From');
+    await page.getByLabel('Target date format').fill('yyyy-MM-dd');
+    await page
+      .getByLabel('Source field', { exact: true })
+      .selectOption({ label: 'CEPC.Valid From' });
+    await expect(page.getByTestId('preview-result-1')).toHaveText('1/1/26');
+
+    await page.getByTestId('convert-to-date-format').click();
+    await expect(page.getByLabel('Step 1 output format')).toHaveValue('yyyy-MM-dd');
+    await page.getByLabel('Step 1 input format').fill('M/d/yy');
+    await page.getByLabel('Step 1 two-digit year pivot').fill('68');
+    await page.getByLabel('Step 1 special values').fill('12/31/99 -> 9999-12-31');
+    await page.getByLabel('Step 1 invalid value behavior').selectOption('error');
+    await page.getByLabel('Step 1 sample value').fill('12/31/99');
+    await expect(page.getByTestId('date-format-result-1')).toHaveText('9999-12-31');
+    await expect(page.getByTestId('preview-result-1')).toHaveText('2026-01-01');
+    await expect(page.getByTestId('preview-result-2')).toHaveText('2026-05-01');
+  });
+});
