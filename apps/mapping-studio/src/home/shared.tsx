@@ -33,7 +33,7 @@ export function attentionOf(
 ): { title: string; text: string; action: string } | undefined {
   if (card.problem)
     return {
-      title: `${card.object.name}: the project file cannot be read`,
+      title: `${card.object.name}: the mapping file cannot be read`,
       text: card.problem,
       action: 'Details',
     };
@@ -65,7 +65,7 @@ export function StorageDialog({ open, onClose }: { open: boolean; onClose: () =>
             </Text>
             <Text block style={{ marginTop: 8, color: 'var(--muted)' }}>
               A OneDrive folder is shared with your team and keeps version history. Browser storage
-              stays on this computer. Customers kept in one place are not copied to the other.
+              stays on this computer. Projects kept in one place are not copied to the other.
             </Text>
             {message && (
               <MessageBar intent="error" data-testid="storage-message" style={{ marginTop: 12 }}>
@@ -261,8 +261,8 @@ export function NewCustomerDialog({ open, onClose }: { open: boolean; onClose: (
   return (
     <FormDialog
       open={open}
-      title="New customer"
-      submit="Create customer"
+      title="New project"
+      submit="Create project"
       onClose={onClose}
       onSubmit={async () => {
         const r = await ws.addCustomer(name, notes);
@@ -274,12 +274,12 @@ export function NewCustomerDialog({ open, onClose }: { open: boolean; onClose: (
       }}
     >
       <label>
-        <Text block>Customer name</Text>
-        <Input aria-label="Customer name" value={name} onChange={(_, d) => setName(d.value)} />
+        <Text block>Project name</Text>
+        <Input aria-label="Project name" value={name} onChange={(_, d) => setName(d.value)} />
       </label>
       <label>
         <Text block>Notes (optional)</Text>
-        <Input aria-label="Customer notes" value={notes} onChange={(_, d) => setNotes(d.value)} />
+        <Input aria-label="Project notes" value={notes} onChange={(_, d) => setNotes(d.value)} />
       </label>
     </FormDialog>
   );
@@ -334,8 +334,8 @@ export function BrowserCustomersBanner() {
   return (
     <MessageBar intent="warning" data-testid="browser-customers-banner" layout="multiline">
       <MessageBarBody>
-        {n} {n === 1 ? 'customer is' : 'customers are'} still kept in this browser, not in the
-        folder “{ws.connection.name}”. Move {n === 1 ? 'it' : 'them'} into the folder to work on{' '}
+        {n} {n === 1 ? 'project is' : 'projects are'} still kept in this browser, not in the folder
+        “{ws.connection.name}”. Move {n === 1 ? 'it' : 'them'} into the folder to work on{' '}
         {n === 1 ? 'it' : 'them'} here.
         {message ? ` ${message}` : ''}
       </MessageBarBody>
@@ -424,8 +424,8 @@ export function WorkspaceChoiceDialog() {
                   <span>{o.folder}</span>
                   <span className="mms-muted">
                     {o.customers === 0
-                      ? 'no customers'
-                      : `${o.customers} ${o.customers === 1 ? 'customer' : 'customers'}`}
+                      ? 'no projects'
+                      : `${o.customers} ${o.customers === 1 ? 'project' : 'projects'}`}
                   </span>
                 </Button>
               ))}

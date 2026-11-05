@@ -106,16 +106,16 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 20 }}>
           <div style={{ flex: '1 1 420px', minWidth: 0 }}>
             <h1 className="mms-h1" data-testid="home-title">
-              Customers
+              Projects
             </h1>
             <p className="mms-sub" data-testid="portfolio-summary">
-              {all.length} {all.length === 1 ? 'customer' : 'customers'} · {objects} business{' '}
+              {all.length} {all.length === 1 ? 'project' : 'projects'} · {objects} business{' '}
               {objects === 1 ? 'object' : 'objects'} · {runs} {runs === 1 ? 'run' : 'runs'} saved
             </p>
           </div>
           <OpenWorkspaceButton onMessage={setOpenMessage} />
           <Button appearance="primary" onClick={() => onNewCustomer()}>
-            New customer
+            New project
           </Button>
         </div>
 
@@ -147,7 +147,7 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
           >
             Sort by
             <select
-              aria-label="Sort customers"
+              aria-label="Sort projects"
               value={sort}
               onChange={(e) => setSort(e.target.value as typeof sort)}
               style={{
@@ -166,7 +166,7 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
           </label>
         </div>
 
-        <section className="mms-cards" aria-label="Customers">
+        <section className="mms-cards" aria-label="Projects">
           {shown.map((s, i) => {
             const [bg, fg] = TILES[i % TILES.length]!;
             const c = s.p.entry.customer;
@@ -176,7 +176,7 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
                 type="button"
                 className="mms-card"
                 data-testid={`customer-${c.name}`}
-                aria-label={`Open customer ${c.name}`}
+                aria-label={`Open project ${c.name}`}
                 onClick={() => ws.selectCustomer(s.p.entry.folder)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%' }}>
@@ -294,13 +294,13 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
               >
                 +
               </span>
-              Add a customer
+              Add a project
             </button>
           )}
         </section>
         {shown.length === 0 && (
           <p className="mms-muted" data-testid="no-customers-match">
-            No customers match.
+            No projects match.
           </p>
         )}
 
@@ -313,17 +313,17 @@ export function Customers({ onNewCustomer }: { onNewCustomer: () => void }) {
               paddingBottom: 12,
             }}
           >
-            <h2 className="mms-h2">All projects</h2>
+            <h2 className="mms-h2">All business objects</h2>
             <span className="mms-muted" style={{ fontSize: 13 }}>
-              Every business object across customers
+              Every business object across projects
             </span>
           </div>
           <div className="mms-panel mms-scroll">
-            <table className="mms-table" aria-label="All projects">
+            <table className="mms-table" aria-label="All business objects">
               <thead>
                 <tr>
+                  <th scope="col">Business object</th>
                   <th scope="col">Project</th>
-                  <th scope="col">Customer</th>
                   <th scope="col">Status</th>
                   <th scope="col" style={{ width: 220 }}>
                     Fields mapped

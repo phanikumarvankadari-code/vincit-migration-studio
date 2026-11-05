@@ -177,7 +177,7 @@ export function Shell() {
                   void workspace.closeObject().then(() => workspace.selectCustomer(undefined));
                 }}
               >
-                All customers
+                All projects
               </button>
               <span aria-hidden="true">›</span>
               <span>{workspace.open.customerName}</span>
@@ -190,7 +190,7 @@ export function Shell() {
             <Text size={200} className="mms-muted">
               Single project ·{' '}
               <a href="/" data-testid="go-to-workspace" style={{ color: 'var(--brand)' }}>
-                Go to the customer workspace
+                Go to the project workspace
               </a>
             </Text>
           )}

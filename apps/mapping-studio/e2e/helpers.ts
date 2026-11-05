@@ -209,19 +209,19 @@ export async function openHome(page: Page): Promise<void> {
 
 /** First run: creates the first customer, keeping files in this browser. */
 export async function createFirstCustomer(page: Page, name: string): Promise<void> {
-  await expect(page.getByText('Create your first customer')).toBeVisible();
-  await page.getByLabel('Customer name').fill(name);
+  await expect(page.getByText('Create your first project')).toBeVisible();
+  await page.getByLabel('Project name').fill(name);
   await page.getByText('This browser only').click();
-  await page.getByRole('button', { name: 'Create customer' }).click();
+  await page.getByRole('button', { name: 'Create project' }).click();
   await expect(page.getByTestId('home-title')).toHaveText(name);
 }
 
-/** On All customers: the New customer dialog. */
+/** On All projects: the New project dialog. */
 export async function addCustomer(page: Page, name: string, notes = ''): Promise<void> {
-  await page.getByRole('button', { name: 'New customer' }).click();
-  await page.getByLabel('Customer name').fill(name);
-  if (notes) await page.getByLabel('Customer notes').fill(notes);
-  await page.getByRole('button', { name: 'Create customer' }).click();
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByLabel('Project name').fill(name);
+  if (notes) await page.getByLabel('Project notes').fill(notes);
+  await page.getByRole('button', { name: 'Create project' }).click();
   await expect(page.getByTestId('home-title')).toHaveText(name);
 }
 

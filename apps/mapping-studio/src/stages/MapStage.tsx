@@ -1,6 +1,12 @@
 import {
   Badge,
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   MessageBar,
   MessageBarBody,
   ProgressBar,
@@ -12,9 +18,11 @@ import {
 } from '@fluentui/react-components';
 import { computeCompleteness, type TargetStructure } from '@mms/mapping-core';
 import type { RowFilter } from '@mms/studio-model';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { stamp } from '@mms/workspace-files';
 import { Section } from '../components/common';
 import { useStudio } from '../context';
+import { useOptionalWorkspace } from '../workspace';
 import { MappingEditor } from '../editor/MappingEditor';
 import { MappingTable } from './MappingTable';
 import { UndoBar } from './UndoBar';
@@ -50,6 +58,32 @@ export function MapStage() {
   // "Hard-code a value" opens the editor on the Constant type.
   const [preset, setPreset] = useState<'constant' | undefined>();
   const [settings, setSettings] = useState<TargetStructure | undefined>();
+  const ws = useOptionalWorkspace();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [pendingUpload, setPendingUpload] = useState<File | undefined>();
+  const [fileMessage, setFileMessage] = useState<{ ok: boolean; text: string } | undefined>();
+  const openObject = ws?.open;
+
+  const downloadMapping = async () => {
+    if (!ws || !openObject) return;
+    const base = [openObject.customerName, openObject.object.name, stamp(new Date().toISOString())]
+      .map((p) => p.replace(/[\\/:*?"<>|]+/g, '_'))
+      .join('_');
+    const r = await ws.downloadMapping(openObject.customerFolder, openObject.objectFolder, base);
+    setFileMessage(r.ok ? undefined : { ok: false, text: r.message });
+  };
+
+  const uploadMapping = async () => {
+    const file = pendingUpload;
+    setPendingUpload(undefined);
+    if (!ws || !openObject || !file) return;
+    const r = await ws.uploadMapping(openObject.customerFolder, openObject.objectFolder, file);
+    setFileMessage(
+      r.ok
+        ? { ok: true, text: `The mapping was replaced with "${file.name}".` }
+        : { ok: false, text: r.message },
+    );
+  };
   const target = state.project.targetDefinition;
   const completeness = useMemo(
     () => (target ? computeCompleteness(target, state.project.mappingDefinition) : []),
@@ -127,6 +161,60 @@ export function MapStage() {
       </div>
 
       <UndoBar />
+      {openObject && (
+        <div className={s.row}>
+          <Button data-testid="download-mapping" onClick={() => void downloadMapping()}>
+            Download mapping
+          </Button>
+          <Button data-testid="upload-mapping" onClick={() => fileInput.current?.click()}>
+            Upload mapping
+          </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            data-testid="upload-mapping-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) {
+                setFileMessage(undefined);
+                setPendingUpload(f);
+              }
+            }}
+          />
+        </div>
+      )}
+      {fileMessage && (
+        <MessageBar intent={fileMessage.ok ? 'success' : 'error'}>
+          <MessageBarBody>{fileMessage.text}</MessageBarBody>
+        </MessageBar>
+      )}
+      <Dialog
+        open={pendingUpload !== undefined}
+        onOpenChange={(_, d) => !d.open && setPendingUpload(undefined)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Replace the mapping?</DialogTitle>
+            <DialogContent>
+              The whole mapping of this business object is replaced with the contents of "
+              {pendingUpload?.name}".
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="primary"
+                data-testid="confirm-upload-mapping"
+                onClick={() => void uploadMapping()}
+              >
+                Replace mapping
+              </Button>
+              <Button onClick={() => setPendingUpload(undefined)}>Cancel</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
       <TabList
         selectedValue={view}
         onTabSelect={(_, d) => setView(d.value as 'table' | 'visual')}
