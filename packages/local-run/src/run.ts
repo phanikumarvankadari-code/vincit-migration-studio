@@ -1,6 +1,14 @@
-import { toCsv, toXlsx, utf8Bytes, type CsvOptions } from '@mms/file-export';
+import {
+  fillTemplate,
+  toCsv,
+  toXlsx,
+  utf8Bytes,
+  type CsvOptions,
+  type TemplateSheet,
+} from '@mms/file-export';
 import {
   RunResultSchema,
+  fromBase64,
   type Diagnostic,
   type MappingSnapshot,
   type RunDefinition,
@@ -246,6 +254,7 @@ export function runLocal(
   const formats = options.formats ?? ['csv'];
   const xlsxSheets: { name: string; header: string[]; rows: SourceValue[][] }[] = [];
   const written: Record<string, number> = {};
+  const templateSheets: TemplateSheet[] = [];
 
   const used = new Set<string>();
   const unique = (name: string): string => {
@@ -292,6 +301,12 @@ export function runLocal(
       dropped,
     });
     written[st.id] = good.length;
+    if (st.templateSheet)
+      templateSheets.push({
+        sheet: st.templateSheet,
+        keys: st.fields.map((f) => f.technicalName ?? null),
+        rows: good,
+      });
 
     const errHeader = ['Row', 'Source row', 'Problems', ...header];
     if (formats.includes('csv')) {
@@ -317,6 +332,24 @@ export function runLocal(
       xlsxSheets.push({ name: st.name, header, rows: good });
       if (bad.length > 0)
         xlsxSheets.push({ name: `${st.name} errors`, header: errHeader, rows: bad });
+    }
+  }
+
+  // A target template workbook gets the rows in its own sheets (always, whatever formats were chosen).
+  const template = snapshot.targetDefinition.template;
+  if (template && templateSheets.length > 0) {
+    const filled = fillTemplate(fromBase64(template.base64), templateSheets);
+    if (filled.ok) {
+      files.push({
+        name: unique(template.fileName.replace(/[\\/:*?"<>|]/g, '_')),
+        format: 'xlsx',
+        kind: 'output',
+        rows: templateSheets.reduce((n, t) => n + t.rows.length, 0),
+        content: filled.value.bytes,
+      });
+      notes.push(...filled.value.notes);
+    } else {
+      notes.push(...filled.issues.map((i) => `The target template was not filled: ${i.message}`));
     }
   }
 

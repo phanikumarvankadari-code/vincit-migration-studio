@@ -14,3 +14,4 @@ export * from './serialize.js';
 export * from './rows.js';
 export * from './completeness.js';
 export * from './lineage.js';
+export * from './base64.js';

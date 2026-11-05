@@ -27,6 +27,11 @@ export const targetFile = () => ({
   content: fixtureBytes('target/data_pc.XLSX'),
 });
 
+export const templateFile = () => ({
+  name: 'data_pc_template.xlsx',
+  content: fixtureBytes('target/data_pc_template.xlsx'),
+});
+
 export const newState = (): StudioState =>
   createStudioState({
     id: 'p1',

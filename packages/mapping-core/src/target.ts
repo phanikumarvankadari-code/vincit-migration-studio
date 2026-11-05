@@ -57,16 +57,27 @@ export const TargetStructureSchema = z.strictObject({
   importance: z.string().optional(),
   /** Default date layout for the fields of this structure that have none of their own. */
   dateFormat: z.string().min(1).optional(),
+  /** Name of the sheet of the target template workbook that this structure's data goes into. */
+  templateSheet: z.string().min(1).optional(),
   fields: z.array(TargetFieldSchema),
   generation: RowGenerationSchema.optional(),
   parent: ParentLinkSchema.optional(),
 });
 export type TargetStructure = z.infer<typeof TargetStructureSchema>;
 
+/** A target template workbook (for example an SAP migration template), kept so output can be written into it. */
+export const TargetTemplateSchema = z.strictObject({
+  fileName: z.string().min(1),
+  /** The .xlsx file, base64 text. */
+  base64: z.string().min(1),
+});
+export type TargetTemplate = z.infer<typeof TargetTemplateSchema>;
+
 export const TargetDefinitionSchema = z.strictObject({
   id: TargetDefinitionIdSchema,
   name: z.string().min(1),
   structures: z.array(TargetStructureSchema),
+  template: TargetTemplateSchema.optional(),
 });
 export type TargetDefinition = z.infer<typeof TargetDefinitionSchema>;
 
