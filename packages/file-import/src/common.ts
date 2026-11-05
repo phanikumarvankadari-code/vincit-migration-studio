@@ -35,6 +35,18 @@ export function stripExtension(fileName: string): string {
   return fileName.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '') || fileName;
 }
 
+/**
+ * A dataset name from a file name: without the extension, and without what table export tools add around an SAP
+ * table name, a system prefix and a date or time stamp (S4H_ANLA_20261105_153937.csv gives ANLA).
+ */
+export function datasetNameFromFile(fileName: string): string {
+  const base = stripExtension(fileName);
+  const name = base
+    .replace(/(?:[_-]\d{8}(?:[_-]?\d{4,6})?)+$/, '')
+    .replace(/^(?:S4H|S4|ECC6?|ERP|R3|BW)[_-](?=[A-Za-z0-9])/i, '');
+  return name || base;
+}
+
 /** Deterministic dataset IDs from names. Equal slugs get a numeric suffix. */
 export function assignDatasetIds(names: readonly string[]): string[] {
   const used = new Set<string>();

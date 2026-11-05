@@ -19,9 +19,8 @@ import type {
   RuleDraft,
   StepDraft,
 } from '@mms/studio-model';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useStudio } from '../context';
-import { ValueSuggestions } from './ValueSuggestions';
 import { SourceSelect } from './SourceSelect';
 
 const useStyles = makeStyles({
@@ -188,31 +187,13 @@ export function DirectForm({
 export function ConstantForm({
   draft,
   onChange,
-  target,
 }: {
   draft: Extract<MappingDraft, { type: 'constant' }>;
   onChange: (d: MappingDraft) => void;
-  /** The target field this value is for, so values can be suggested. */
-  target?: { structureId: string; fieldId: string; datatype: string };
 }) {
   const s = useStyles();
   return (
     <div className={s.stack}>
-      {target && (
-        <ValueSuggestions
-          structureId={target.structureId}
-          fieldId={target.fieldId}
-          datatype={target.datatype}
-          onUse={(value) =>
-            onChange({
-              ...draft,
-              value,
-              blank: false,
-              ...(target.datatype !== 'unknown' ? { datatype: target.datatype as DataType } : {}),
-            })
-          }
-        />
-      )}
       <label>
         <Text block weight="semibold">
           Value
@@ -453,8 +434,144 @@ export function ConditionForm({
   );
 }
 
+const DATE_FORMAT_DEFAULT = {
+  inputFormat: 'yyyyMMdd',
+  outputFormat: 'yyyy-MM-dd',
+  invalidValueBehavior: 'blank',
+  specialValues: { '00000000': '' },
+};
+
+function readJson(text: string): Record<string, unknown> {
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === 'object' && v !== null && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Date Format settings as form fields. The settings stay JSON text in the draft, so nothing else changes. */
+function DateFormatFields({
+  step,
+  index,
+  onChange,
+}: {
+  step: Extract<StepDraft, { kind: 'routine' }>;
+  index: number;
+  onChange: (configuration: string) => void;
+}) {
+  const s = useStyles();
+  const { registry } = useStudio();
+  const [sample, setSample] = useState('20261105');
+  const cfg = readJson(step.configuration);
+  const special = (cfg['specialValues'] ?? {}) as Record<string, string>;
+  const specialText = Object.entries(special)
+    .map(([k, v]) => `${k} -> ${v}`)
+    .join('\n');
+  const [specialDraft, setSpecialDraft] = useState(specialText);
+  const set = (key: string, value: unknown) =>
+    onChange(JSON.stringify({ ...cfg, [key]: value }, null, 2));
+  const setSpecial = (text: string) => {
+    setSpecialDraft(text);
+    const out: Record<string, string> = {};
+    for (const line of text.split('\n')) {
+      const at = line.indexOf('->');
+      if (at < 0) continue;
+      const key = line.slice(0, at).trim();
+      if (key) out[key] = line.slice(at + 2).trim();
+    }
+    set('specialValues', out);
+  };
+  const impl = registry['date.convert'];
+  const result = impl?.({
+    value: sample === '' ? null : sample,
+    inputs: [sample],
+    configuration: cfg as never,
+  });
+  return (
+    <div className={s.stack} data-testid={`date-format-${index + 1}`}>
+      <label>
+        <Text block>Input format</Text>
+        <Input
+          aria-label={`Step ${index + 1} input format`}
+          value={String(cfg['inputFormat'] ?? '')}
+          onChange={(_, d) => set('inputFormat', d.value)}
+        />
+      </label>
+      <label>
+        <Text block>Output format</Text>
+        <Input
+          aria-label={`Step ${index + 1} output format`}
+          value={String(cfg['outputFormat'] ?? '')}
+          onChange={(_, d) => set('outputFormat', d.value)}
+        />
+      </label>
+      {/yy/i.test(String(cfg['inputFormat'] ?? '')) &&
+        !/yyyy/i.test(String(cfg['inputFormat'] ?? '')) && (
+          <label>
+            <Text block>Two-digit year pivot (years up to this are 20xx, larger are 19xx)</Text>
+            <Input
+              aria-label={`Step ${index + 1} two-digit year pivot`}
+              type="number"
+              value={String(cfg['twoDigitYearPivot'] ?? '')}
+              onChange={(_, d) =>
+                set('twoDigitYearPivot', d.value === '' ? undefined : Number(d.value))
+              }
+            />
+          </label>
+        )}
+      <label>
+        <Text block>Special values (one per line: input -&gt; result, empty result = blank)</Text>
+        <Textarea
+          aria-label={`Step ${index + 1} special values`}
+          rows={2}
+          style={{ fontFamily: 'monospace' }}
+          value={specialDraft}
+          onChange={(_, d) => setSpecial(d.value)}
+        />
+      </label>
+      <label>
+        <Text block>Invalid value behavior</Text>
+        <Select
+          aria-label={`Step ${index + 1} invalid value behavior`}
+          value={String(cfg['invalidValueBehavior'] ?? 'error')}
+          onChange={(_, d) => set('invalidValueBehavior', d.value)}
+        >
+          <option value="blank">Blank</option>
+          <option value="keep">Keep original</option>
+          <option value="error">Error</option>
+        </Select>
+      </label>
+      <div className={s.card} data-testid={`date-format-preview-${index + 1}`}>
+        <label>
+          <Text block>Source value</Text>
+          <Input
+            aria-label={`Step ${index + 1} sample value`}
+            value={sample}
+            onChange={(_, d) => setSample(d.value)}
+          />
+        </label>
+        <Text weight="semibold">
+          Result:{' '}
+          <span data-testid={`date-format-result-${index + 1}`}>
+            {!result ? '' : result.ok ? (result.value ?? '(blank)') : `Error: ${result.message}`}
+          </span>
+        </Text>
+      </div>
+    </div>
+  );
+}
+
 /** A starting point for a routine's settings: every required setting with an empty value of the right type. */
-export function settingsTemplate(routineId: string): string {
+export function settingsTemplate(routineId: string, targetDateFormat?: string): string {
+  if (routineId === 'date.convert')
+    return JSON.stringify(
+      { ...DATE_FORMAT_DEFAULT, ...(targetDateFormat ? { outputFormat: targetDateFormat } : {}) },
+      null,
+      2,
+    );
   const d = describeRoutine(routineId);
   const schema = d?.configuration as
     { properties?: Record<string, { type?: string }>; required?: string[] } | undefined;
@@ -479,9 +596,12 @@ function settingNames(routineId: string): string {
 export function RoutineForm({
   draft,
   onChange,
+  targetDateFormat,
 }: {
   draft: Extract<MappingDraft, { type: 'routine' }>;
   onChange: (d: MappingDraft) => void;
+  /** The date layout the target field expects, used to fill in Date Format steps. */
+  targetDateFormat?: string | undefined;
 }) {
   const s = useStyles();
   const { state } = useStudio();
@@ -519,7 +639,7 @@ export function RoutineForm({
                   setStep(i, {
                     ...step,
                     routineId: d.value,
-                    configuration: settingsTemplate(d.value),
+                    configuration: settingsTemplate(d.value, targetDateFormat),
                   })
                 }
               >
@@ -577,14 +697,24 @@ export function RoutineForm({
           {step.kind === 'routine' ? (
             <>
               <Text className={s.muted}>{describeRoutine(step.routineId)?.description}</Text>
-              <Text className={s.muted}>{settingNames(step.routineId)}</Text>
-              <Textarea
-                aria-label={`Step ${i + 1} settings`}
-                rows={4}
-                style={{ fontFamily: 'monospace' }}
-                value={step.configuration}
-                onChange={(_, d) => setStep(i, { ...step, configuration: d.value })}
-              />
+              {step.routineId === 'date.convert' ? (
+                <DateFormatFields
+                  step={step}
+                  index={i}
+                  onChange={(configuration) => setStep(i, { ...step, configuration })}
+                />
+              ) : (
+                <>
+                  <Text className={s.muted}>{settingNames(step.routineId)}</Text>
+                  <Textarea
+                    aria-label={`Step ${i + 1} settings`}
+                    rows={4}
+                    style={{ fontFamily: 'monospace' }}
+                    value={step.configuration}
+                    onChange={(_, d) => setStep(i, { ...step, configuration: d.value })}
+                  />
+                </>
+              )}
               <label>
                 <Text block>If this step fails</Text>
                 <Select
@@ -621,6 +751,25 @@ export function RoutineForm({
           }
         >
           Add routine step
+        </Button>
+        <Button
+          data-testid="add-date-format-step"
+          onClick={() =>
+            onChange({
+              ...draft,
+              steps: [
+                ...draft.steps,
+                {
+                  kind: 'routine',
+                  routineId: 'date.convert',
+                  configuration: settingsTemplate('date.convert', targetDateFormat),
+                  onError: 'stop',
+                },
+              ],
+            })
+          }
+        >
+          Add Date Format
         </Button>
         <Button
           disabled={state.project.lookups.length === 0}

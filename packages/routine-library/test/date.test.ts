@@ -224,3 +224,50 @@ describe('a date chain, as in the PRD', () => {
     expect(code(run('13/45/26'))).toBe('DATE_INVALID');
   });
 });
+
+describe('date.convert', () => {
+  const sap = {
+    inputFormat: 'yyyyMMdd',
+    outputFormat: 'yyyy-MM-dd',
+    invalidValueBehavior: 'blank',
+    specialValues: { '00000000': '' },
+  };
+  it.each([
+    ['20261105', '2026-11-05'],
+    ['20260101', '2026-01-01'],
+    ['99991231', '9999-12-31'],
+    ['20240229', '2024-02-29'],
+    ['00000000', null],
+    ['', null],
+    [null, null],
+  ])('SAP date %s gives %s', (input, expected) => {
+    expect(val(call('date.convert', sap, input))).toBe(expected);
+  });
+
+  it.each(['20261301', '20260229', '20260001', 'abcdefgh', '2026110'])(
+    'invalid %s: blank, keep or error as configured',
+    (input) => {
+      expect(val(call('date.convert', sap, input))).toBeNull();
+      expect(val(call('date.convert', { ...sap, invalidValueBehavior: 'keep' }, input))).toBe(
+        input,
+      );
+      expect(code(call('date.convert', { ...sap, invalidValueBehavior: 'error' }, input))).toMatch(
+        /^DATE_INVALID/,
+      );
+    },
+  );
+
+  it('is generic: any input and output layout', () => {
+    expect(
+      val(
+        call('date.convert', { inputFormat: 'dd.MM.yyyy', outputFormat: 'yyyyMMdd' }, '05.11.2026'),
+      ),
+    ).toBe('20261105');
+  });
+
+  it('keeps 99991231 valid under strict error behavior', () => {
+    expect(val(call('date.convert', { ...sap, invalidValueBehavior: 'error' }, '99991231'))).toBe(
+      '9999-12-31',
+    );
+  });
+});

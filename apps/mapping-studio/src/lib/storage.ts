@@ -128,6 +128,7 @@ export function downloadFile(name: string, content: string | Uint8Array, mime: s
 export const MIME: Record<string, string> = {
   csv: 'text/csv;charset=utf-8',
   json: 'application/json',
+  xml: 'application/xml',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   zip: 'application/zip',
 };

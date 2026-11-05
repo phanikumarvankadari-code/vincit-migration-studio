@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectSchema, type Project } from '@mms/mapping-core';
-import { conflictsByTarget, detectConflicts, removeMappings } from '../src/index.js';
+import { detectConflicts, removeMappings } from '../src/index.js';
 
 const NOW = '2026-10-22T10:00:00.000Z';
 
@@ -184,27 +184,6 @@ describe('detectConflicts (SPEC-036 AC-4)', () => {
     );
     // fill figures that are not given (no rows loaded) give no such conflict
     expect(detectConflicts(make(maps)).filter((x) => x.kind === 'sourceEmpty')).toEqual([]);
-  });
-
-  it('flags a suggestion conflict for an unmapped target only, and groups conflicts by target', () => {
-    const suggestion = {
-      targetStructureId: 'st',
-      targetFieldId: 't-desc',
-      sourceFieldId: 'f-name',
-      score: 0.7,
-      conflict: { sourceFieldId: 'f-blank', score: 0.65, origin: 'ai' as const },
-    };
-    const c = detectConflicts(make([]), { suggestions: [suggestion] });
-    expect(c).toHaveLength(1);
-    expect(c[0]).toMatchObject({ kind: 'suggestionDisagree', targetFieldIds: ['t-desc'] });
-    expect(c[0]!.message).toContain('(70%)');
-    expect(c[0]!.message).toContain('(65%, AI)');
-    expect(
-      detectConflicts(make([direct('t-desc', 'f-name')]), { suggestions: [suggestion] }).filter(
-        (x) => x.kind === 'suggestionDisagree',
-      ),
-    ).toEqual([]);
-    expect(conflictsByTarget(c).get('t-desc')).toHaveLength(1);
   });
 });
 

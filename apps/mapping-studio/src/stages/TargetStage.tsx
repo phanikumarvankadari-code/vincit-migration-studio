@@ -147,12 +147,12 @@ export function TargetStage() {
     <>
       <Section
         title="Target structure"
-        hint="Load a file that describes the target (for example the migration template), or type it in. The app finds the header row and columns; you can correct them."
+        hint="Load a file that describes the target (for example the SAP migration template as .xlsx or Excel .xml), or type it in. The app finds the header row and columns; you can correct them."
         actions={
           <div className={s.row}>
             <FileButton
               label="Load target structure file"
-              accept=".xlsx,.csv"
+              accept=".xlsx,.xml,.csv"
               appearance="primary"
               testId="target-file-input"
               onFiles={(f) => void loadFile(f)}
@@ -231,6 +231,17 @@ export function TargetStage() {
                     .map((x) => `${x.name} (${x.fields.length})`)
                     .join(', ')}
                 </Text>
+                {preview.value.target.template && (
+                  <Text className={s.muted} data-testid="target-template-note">
+                    Template workbook: the structures come from its Field List sheet. The result is
+                    written into its data sheets (
+                    {preview.value.target.structures
+                      .filter((x) => x.templateSheet)
+                      .map((x) => x.templateSheet)
+                      .join(', ')}
+                    ).
+                  </Text>
+                )}
                 {preview.value.diagnostics.map((d, i) => (
                   <MessageBar
                     key={i}
@@ -272,6 +283,11 @@ export function TargetStage() {
           </div>
         )}
 
+        {target?.template && (
+          <Text className={s.muted} data-testid="target-template-loaded">
+            Output is written into the template workbook “{target.template.fileName}”.
+          </Text>
+        )}
         {target && (
           <div className={s.list} data-testid="target-structures">
             {target.structures.map((st) => (

@@ -1,34 +1,89 @@
-import type { Project, RowGeneration } from '@mms/mapping-core';
+import type { Project, RowGeneration, TargetStructure } from '@mms/mapping-core';
 
 /**
- * A confirmed pair of a source dataset and a target structure is the structure's driver (`generation`), which is
- * what the engine already uses to make rows. Helpers are not stored: they are the datasets joined to the driver.
+ * Pure edits for descriptions and for the pairing of target structures with their main source table.
+ * They are used by the Structures overview and by the import of an AI answer.
  */
+
 const touch = (p: Project, at: string): Project => ({
   ...p,
   updatedAt: at as Project['updatedAt'],
 });
 
-/** Sets the driver dataset of a structure, keeping its parent link and any join restriction that still applies. */
-export function setDriver(
+export interface DescriptionEdits {
+  /** Table descriptions by dataset ID. */
+  tables?: readonly { datasetId: string; description: string }[];
+  /** Field descriptions by dataset and field ID. */
+  fields?: readonly { datasetId: string; fieldId: string; description: string }[];
+}
+
+/** Sets the descriptions of source tables and fields. Unknown IDs are ignored. */
+export function applyDescriptions(project: Project, edits: DescriptionEdits, at: string): Project {
+  const tables = new Map((edits.tables ?? []).map((t) => [t.datasetId, t.description]));
+  const fields = new Map(
+    (edits.fields ?? []).map((f) => [`${f.datasetId}/${f.fieldId}`, f.description]),
+  );
+  return touch(
+    {
+      ...project,
+      sourceDefinitions: project.sourceDefinitions.map((s) => ({
+        ...s,
+        datasets: s.datasets.map((d) => ({
+          ...d,
+          ...(tables.has(d.id) ? { description: tables.get(d.id)! } : {}),
+          fields: d.fields.map((f) => {
+            const text = fields.get(`${d.id}/${f.id}`);
+            return text === undefined ? f : { ...f, description: text };
+          }),
+        })),
+      })),
+    },
+    at,
+  );
+}
+
+export interface PairingEdit {
+  structureId: string;
+  driverDatasetId: string;
+  helperDatasetIds?: readonly string[];
+  status: 'suggested' | 'confirmed';
+}
+
+function withGeneration(s: TargetStructure, g: RowGeneration): TargetStructure {
+  return { ...s, generation: g };
+}
+
+/**
+ * Sets the main table (and the extra tables) of structures. A structure that keeps its main table keeps its
+ * relationship choices. Unknown structures are ignored.
+ */
+export function applyPairings(
   project: Project,
-  structureId: string,
-  driverDatasetId: string,
+  edits: readonly PairingEdit[],
   at: string,
 ): Project {
   const target = project.targetDefinition;
-  if (!target || !target.structures.some((s) => s.id === structureId)) return project;
+  if (!target) return project;
+  const byId = new Map(edits.map((e) => [e.structureId, e]));
   return touch(
     {
       ...project,
       targetDefinition: {
         ...target,
         structures: target.structures.map((s) => {
-          if (s.id !== structureId) return s;
-          const generation: RowGeneration = {
-            driverDatasetId: driverDatasetId as RowGeneration['driverDatasetId'],
-          };
-          return { ...s, generation };
+          const e = byId.get(s.id);
+          if (!e) return s;
+          const keep =
+            s.generation?.driverDatasetId === e.driverDatasetId ? s.generation : undefined;
+          const helpers = (e.helperDatasetIds ?? []).filter((id) => id !== e.driverDatasetId);
+          return withGeneration(s, {
+            driverDatasetId: e.driverDatasetId as RowGeneration['driverDatasetId'],
+            ...(keep?.viaRelationshipIds ? { viaRelationshipIds: keep.viaRelationshipIds } : {}),
+            ...(helpers.length > 0
+              ? { helperDatasetIds: helpers as unknown as RowGeneration['helperDatasetIds'] }
+              : {}),
+            status: e.status,
+          });
         }),
       },
     },
@@ -36,8 +91,12 @@ export function setDriver(
   );
 }
 
-/** Removes the driver of a structure (the engine then falls back to the one dataset its mappings read). */
-export function clearDriver(project: Project, structureId: string, at: string): Project {
+/** Marks the pairing of one structure (or of every structure with a suggested pairing) as confirmed. */
+export function confirmPairings(
+  project: Project,
+  structureId: string | undefined,
+  at: string,
+): Project {
   const target = project.targetDefinition;
   if (!target) return project;
   return touch(
@@ -45,61 +104,21 @@ export function clearDriver(project: Project, structureId: string, at: string): 
       ...project,
       targetDefinition: {
         ...target,
-        structures: target.structures.map((s) => {
-          if (s.id !== structureId) return s;
-          const copy = { ...s };
-          delete copy.generation;
-          return copy;
-        }),
+        structures: target.structures.map((s) =>
+          s.generation?.status === 'suggested' &&
+          (structureId === undefined || s.id === structureId)
+            ? withGeneration(s, { ...s.generation, status: 'confirmed' })
+            : s,
+        ),
       },
     },
     at,
   );
 }
 
-export interface PairView {
-  structureId: string;
-  driverDatasetId: string | undefined;
-  /** Datasets joined to the driver (a join that is not rejected). */
-  helperDatasetIds: string[];
-  /** Of those, the ones whose join is only suggested, not confirmed (rows are not joined until it is). */
-  unconfirmedHelperIds: string[];
-  /** Datasets the structure's mappings read that are neither the driver nor a helper. */
-  strayDatasetIds: string[];
-}
-
-export function pairViews(project: Project): PairView[] {
-  const rels = project.mappingDefinition.relationships.filter((r) => r.status !== 'rejected');
-  return (project.targetDefinition?.structures ?? []).map((st) => {
-    const driver = st.generation?.driverDatasetId as string | undefined;
-    const helpers = new Map<string, boolean>(); // dataset -> confirmed
-    if (driver)
-      for (const r of rels) {
-        const other: string | undefined =
-          r.leftDatasetId === driver
-            ? r.rightDatasetId
-            : r.rightDatasetId === driver
-              ? r.leftDatasetId
-              : undefined;
-        if (other && other !== driver)
-          helpers.set(other, (helpers.get(other) ?? false) || r.status === 'confirmed');
-      }
-    const reads = new Set<string>();
-    for (const m of project.mappingDefinition.mappings)
-      if (m.targetStructureId === st.id)
-        for (const ref of m.sourceReferences) reads.add(ref.datasetId);
-    return {
-      structureId: st.id,
-      driverDatasetId: driver,
-      helperDatasetIds: [...helpers.keys()],
-      unconfirmedHelperIds: [...helpers].filter(([, ok]) => !ok).map(([id]) => id),
-      strayDatasetIds: driver ? [...reads].filter((d) => d !== driver && !helpers.has(d)) : [],
-    };
-  });
-}
-
-/** The datasets to look in for a structure: its driver and the datasets joined to it. Undefined while unpaired. */
-export function scopeOf(project: Project, structureId: string): string[] | undefined {
-  const v = pairViews(project).find((p) => p.structureId === structureId);
-  return v?.driverDatasetId ? [v.driverDatasetId, ...v.helperDatasetIds] : undefined;
+/** Structures whose pairing is still only suggested. */
+export function suggestedPairings(project: Project): TargetStructure[] {
+  return (project.targetDefinition?.structures ?? []).filter(
+    (s) => s.generation?.status === 'suggested',
+  );
 }

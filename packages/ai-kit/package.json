@@ -1,5 +1,5 @@
 {
-  "name": "@mms/mapping-suggest",
+  "name": "@mms/ai-kit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@mms/mapping-core": "^0.0.0"
+    "@mms/file-export": "^0.0.0",
+    "@mms/mapping-core": "^0.0.0",
+    "@mms/profiler": "^0.0.0",
+    "@mms/studio-model": "^0.0.0",
+    "@mms/file-import": "^0.0.0"
   }
 }

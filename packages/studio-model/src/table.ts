@@ -89,6 +89,15 @@ function conditionText(c: ConditionExpr, names: Names): string {
   }
 }
 
+/** A short note on how a routine is set up, for the step label (for example the layouts of Date Format). */
+function routineDetail(routineId: string, configuration: Record<string, unknown>): string {
+  if (routineId !== 'date.convert') return '';
+  const { inputFormat, outputFormat } = configuration;
+  return typeof inputFormat === 'string' && typeof outputFormat === 'string'
+    ? ` [${inputFormat} → ${outputFormat}]`
+    : '';
+}
+
 /** Plain-language text for a mapping: what feeds the field, and what is done to it. */
 export function describeMapping(
   project: Project,
@@ -100,7 +109,9 @@ export function describeMapping(
     .slice()
     .sort((a, b) => a.order - b.order)
     .map((t) =>
-      t.kind === 'routine' ? names.routine(t.routineId) : `Lookup ${names.lookup(t.lookupId)}`,
+      t.kind === 'routine'
+        ? names.routine(t.routineId) + routineDetail(t.routineId, t.configuration)
+        : `Lookup ${names.lookup(t.lookupId)}`,
     );
   let source = sources;
   let primary: string;

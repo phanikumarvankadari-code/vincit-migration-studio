@@ -82,7 +82,7 @@ export function CustomerHome() {
             style={{ fontWeight: 400, color: 'var(--brand)' }}
             onClick={() => ws.selectCustomer(undefined)}
           >
-            All customers
+            All projects
           </button>
           <span aria-hidden="true">›</span>
           <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{customer.name}</span>
@@ -98,7 +98,7 @@ export function CustomerHome() {
           {ws.connection.kind === 'browser' && ws.canChooseFolder && (
             <Button onClick={() => setMoving(true)}>Move to OneDrive folder</Button>
           )}
-          <Button onClick={() => setArchiving({ kind: 'customer' })}>Archive customer</Button>
+          <Button onClick={() => setArchiving({ kind: 'customer' })}>Archive project</Button>
           <Button appearance="primary" onClick={() => setShowNew(true)}>
             Add business object
           </Button>
@@ -438,7 +438,7 @@ export function CustomerHome() {
             data-testid="unfiled"
             style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}
           >
-            <h2 className="mms-h2">Unfiled projects in this browser</h2>
+            <h2 className="mms-h2">Unfiled mappings in this browser</h2>
             <p className="mms-muted" style={{ margin: 0, fontSize: 14 }}>
               Saved before customers existed. Move one into {customer.name} to keep working on it
               here. Source rows were never saved, so add its files again.

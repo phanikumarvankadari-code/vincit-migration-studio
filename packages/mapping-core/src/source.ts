@@ -18,6 +18,8 @@ export const SourceFieldSchema = z.strictObject({
   datasetId: SourceDatasetIdSchema,
   displayName: z.string().min(1),
   technicalName: z.string().min(1).optional(),
+  /** What the field means, for example from the SAP data dictionary. */
+  description: z.string().min(1).optional(),
   datatype: DataTypeSchema,
   nativeType: z.string().min(1).optional(),
   length: z.number().int().nonnegative().optional(),
@@ -38,6 +40,8 @@ export const SourceDatasetSchema = z.strictObject({
   sourceId: SourceDefinitionIdSchema,
   name: z.string().min(1),
   displayName: z.string().min(1),
+  /** What the table holds, for example the SAP table text. */
+  description: z.string().min(1).optional(),
   fields: z.array(SourceFieldSchema),
 });
 export type SourceDataset = z.infer<typeof SourceDatasetSchema>;

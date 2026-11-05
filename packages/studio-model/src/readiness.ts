@@ -40,15 +40,11 @@ export function stageStatuses(
       ? { state: 'notStarted', summary: 'No files yet' }
       : missing > 0
         ? { state: 'attention', summary: `${plural(datasets.length, 'dataset')}, data not loaded` }
-        : pending > 0
-          ? {
-              state: 'attention',
-              summary: `${plural(datasets.length, 'dataset')}, ${plural(pending, 'join')} to confirm`,
-            }
-          : {
-              state: 'complete',
-              summary: `${plural(datasets.length, 'dataset')}${confirmed > 0 ? `, ${plural(confirmed, 'join')} confirmed` : ''}`,
-            };
+        : {
+            // Joins are optional: only confirmed joins are used, so open suggestions never block anything.
+            state: 'complete',
+            summary: `${plural(datasets.length, 'dataset')}${confirmed > 0 ? `, ${plural(confirmed, 'join')} confirmed` : ''}${pending > 0 ? `, ${plural(pending, 'join')} suggested` : ''}`,
+          };
 
   const structures = p.targetDefinition?.structures ?? [];
   const target: StageStatus =
@@ -132,21 +128,12 @@ export function readinessChecklist(
   preflight: readonly Diagnostic[] = [],
 ): ReadinessItem[] {
   const s = stageStatuses(state, preflight);
-  const rels = state.project.mappingDefinition.relationships;
   const p = state.project;
   const completeness = p.targetDefinition
     ? computeCompleteness(p.targetDefinition, p.mappingDefinition)
     : [];
   return [
     { stage: 'sources', label: 'Source files are loaded', done: p.sourceDefinitions.length > 0 },
-    {
-      stage: 'sources',
-      label: 'Every suggested join is confirmed or rejected',
-      done:
-        rels.length > 0
-          ? rels.every((r) => r.status !== 'suggested')
-          : p.sourceDefinitions.length > 0,
-    },
     { stage: 'target', label: 'A target structure is loaded', done: s.target.state === 'complete' },
     {
       stage: 'map',

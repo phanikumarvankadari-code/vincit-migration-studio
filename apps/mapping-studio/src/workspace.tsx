@@ -172,6 +172,14 @@ export interface WorkspaceApi {
   objectDetail: (customerFolder: string, objectFolder: string) => Promise<ObjectFiles>;
   /** Offers the files of one saved run as a ZIP download. */
   downloadRun: (customerFolder: string, objectFolder: string, runFolder: string) => Promise<Result>;
+  /** Offers the object's whole mapping project (sources, targets, mapping, snapshots) as a .mms.json download. */
+  downloadMapping: (
+    customerFolder: string,
+    objectFolder: string,
+    fileBase: string,
+  ) => Promise<Result>;
+  /** Replaces the object's mapping project with an edited .mms.json file, after checking it. */
+  uploadMapping: (customerFolder: string, objectFolder: string, file: File) => Promise<Result>;
   addCustomer: (name: string, notes: string) => Promise<Result>;
   addObject: (name: string, entity: string) => Promise<Result>;
   archiveObject: (folder: string, customerFolder?: string) => Promise<Result>;
@@ -323,7 +331,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (folder: string, customerOverride?: string, stage?: Stage): Promise<Result> => {
       const ctx = ctxRef.current;
       const cf = customerOverride ?? customerFolder;
-      if (!ctx || !cf) return { ok: false, message: 'No customer is selected.' };
+      if (!ctx || !cf) return { ok: false, message: 'No project is selected.' };
       const customer = (await listCustomers(ctx.port)).find((c) => c.folder === cf);
       const entry = (await listObjects(ctx.port, cf)).find((o) => o.folder === folder);
       if (!customer || !entry) return { ok: false, message: 'That business object was not found.' };
@@ -338,7 +346,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!decoded.ok)
         return {
           ok: false,
-          message: `The project file could not be read: ${decoded.issues.map((i) => i.message).join(' ')}`,
+          message: `The mapping file could not be read: ${decoded.issues.map((i) => i.message).join(' ')}`,
         };
       revision.current = entry.object.revision;
       const o: OpenObject = {
@@ -413,7 +421,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ok: false,
           message:
             kind === 'empty'
-              ? 'There is no workspace in that folder. To start a new one, create a customer and choose the folder there.'
+              ? 'There is no workspace in that folder. To start a new one, create a project and choose the folder there.'
               : 'No workspace was found in that folder or in the folders inside it.',
         };
       if (kind === 'other') {
@@ -530,11 +538,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             customers.customers === 0
               ? {
                   intent: 'warning',
-                  text: `The workspace in the folder “${name}”${where} has no customers yet.${skippedText}`,
+                  text: `The workspace in the folder “${name}”${where} has no projects yet.${skippedText}`,
                 }
               : {
                   intent: skipped.length > 0 ? 'warning' : 'info',
-                  text: `Opened the workspace in the folder “${name}”${where}: ${customers.customers} ${customers.customers === 1 ? 'customer' : 'customers'}, ${customers.objects} business ${customers.objects === 1 ? 'object' : 'objects'}.${skippedText}`,
+                  text: `Opened the workspace in the folder “${name}”${where}: ${customers.customers} ${customers.customers === 1 ? 'project' : 'projects'}, ${customers.objects} business ${customers.objects === 1 ? 'object' : 'objects'}.${skippedText}`,
                 },
           );
         }
@@ -576,7 +584,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         (c) =>
           c ?? {
             message:
-              'This project was saved elsewhere (another computer, or a OneDrive sync) since you opened it.',
+              'This mapping was saved elsewhere (another computer, or a OneDrive sync) since you opened it.',
             hasPending: pending.current !== undefined,
           },
       );
@@ -609,7 +617,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : 'The project was not saved.',
+          message: e instanceof Error ? e.message : 'The mapping was not saved.',
         };
       }
     });
@@ -701,7 +709,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return {
             ok: false as const,
-            message: e instanceof Error ? e.message : 'The customers could not be moved.',
+            message: e instanceof Error ? e.message : 'The projects could not be moved.',
           };
         }
       },
@@ -711,7 +719,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!source || !cf || connection.kind !== 'browser')
           return {
             ok: false as const,
-            message: 'Only a customer kept in this browser can be moved to a folder.',
+            message: 'Only a project kept in this browser can be moved to a folder.',
           };
         try {
           const picked = await pickFolder();
@@ -743,7 +751,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return {
             ok: false as const,
-            message: e instanceof Error ? e.message : 'The customer could not be moved.',
+            message: e instanceof Error ? e.message : 'The project could not be moved.',
           };
         }
       },
@@ -858,6 +866,44 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         downloadFile(`${runFolder}.zip`, toZip(entries), MIME['zip']!);
         return { ok: true };
       },
+      downloadMapping: async (cf, folder, name) => {
+        const ctx = ctxRef.current;
+        if (!ctx) return { ok: false, message: 'The workspace is not ready.' };
+        const text = await readProject(ctx.port, cf, folder);
+        if (text === undefined) return { ok: false, message: 'This object has no mapping yet.' };
+        downloadFile(`${name || 'mapping'}.mms.json`, text, MIME['json']!);
+        return { ok: true };
+      },
+      uploadMapping: async (cf, folder, file) => {
+        const ctx = ctxRef.current;
+        if (!ctx) return { ok: false, message: 'The workspace is not ready.' };
+        const decoded = decodeWorkspace(await file.text());
+        if (!decoded.ok)
+          return {
+            ok: false,
+            message: `"${file.name}" was not used: ${decoded.issues.map((i) => i.message).join(' ')}`,
+          };
+        try {
+          const onDisk = (await listObjects(ctx.port, cf)).find((x) => x.folder === folder);
+          if (!onDisk)
+            return { ok: false, message: 'The business object is no longer in the workspace.' };
+          const r = await writeProject(
+            ctx,
+            cf,
+            folder,
+            encodeWorkspace(decoded.value),
+            onDisk.object.revision,
+          );
+          if (!r.ok) return { ok: false, message: r.message };
+          await loadAll();
+          return { ok: true };
+        } catch (e) {
+          return {
+            ok: false,
+            message: e instanceof Error ? e.message : 'The mapping was not saved.',
+          };
+        }
+      },
       objectDetail: async (cf, folder) => {
         const ctx = ctxRef.current;
         if (!ctx) return { files: [] };
@@ -884,7 +930,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       addObject: async (name, entity) => {
         const ctx = ctxRef.current;
-        if (!ctx || !customerFolder) return { ok: false, message: 'Choose a customer first.' };
+        if (!ctx || !customerFolder) return { ok: false, message: 'Choose a project first.' };
         if (name.trim() === '') return { ok: false, message: 'Give the business object a name.' };
         const r = await createObject(
           ctx,
@@ -899,7 +945,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       archiveObject: async (folder, cf) => {
         const ctx = ctxRef.current;
         const c = cf ?? customerFolder;
-        if (!ctx || !c) return { ok: false, message: 'Choose a customer first.' };
+        if (!ctx || !c) return { ok: false, message: 'Choose a project first.' };
         const r = await archive(ctx, [c, folder]);
         if (!r.ok) return r;
         await loadAll();
@@ -907,7 +953,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       archiveCustomer: async () => {
         const ctx = ctxRef.current;
-        if (!ctx || !customerFolder) return { ok: false, message: 'Choose a customer first.' };
+        if (!ctx || !customerFolder) return { ok: false, message: 'Choose a project first.' };
         const r = await archive(ctx, [customerFolder]);
         if (!r.ok) return r;
         await refreshCustomers();
@@ -933,12 +979,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const entry = unfiled.find((u) => u.id === id);
         const text = readLibraryText(id);
         if (!ctx || !customerFolder || !entry || text === undefined)
-          return { ok: false, message: 'Choose a customer first.' };
+          return { ok: false, message: 'Choose a project first.' };
         const decoded = decodeWorkspace(text);
         if (!decoded.ok)
           return {
             ok: false,
-            message: `That saved project cannot be read: ${decoded.issues.map((i) => i.message).join(' ')}`,
+            message: `That saved mapping cannot be read: ${decoded.issues.map((i) => i.message).join(' ')}`,
           };
         const r = await createObject(
           ctx,

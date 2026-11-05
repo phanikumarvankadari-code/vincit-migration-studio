@@ -9,6 +9,7 @@ import {
   DialogTitle,
   MessageBar,
   MessageBarBody,
+  Input,
   Select,
   Text,
   makeStyles,
@@ -47,6 +48,7 @@ export function StructureSettings({
   const [pairs, setPairs] = useState<Pair[]>(
     structure.parent?.keys.map((k) => ({ child: k.childFieldId, parent: k.parentFieldId })) ?? [],
   );
+  const [dateFormat, setDateFormat] = useState<string>(structure.dateFormat ?? '');
   const suggestions = useMemo(
     () => suggestDrivers(state.project, structure.id),
     [state.project, structure.id],
@@ -67,7 +69,13 @@ export function StructureSettings({
           })),
         }
       : null;
-    send({ type: 'structureSettings', structureId: structure.id, generation, parent: link });
+    send({
+      type: 'structureSettings',
+      structureId: structure.id,
+      generation,
+      parent: link,
+      dateFormat: dateFormat.trim() === '' ? null : dateFormat.trim(),
+    });
     onClose();
   };
 
@@ -78,6 +86,21 @@ export function StructureSettings({
           <DialogTitle>Settings for {structure.name}</DialogTitle>
           <DialogContent>
             <div className={s.stack}>
+              <label>
+                <Text block weight="semibold">
+                  Default date format
+                </Text>
+                <Input
+                  aria-label="Default date format"
+                  placeholder="for example yyyy-MM-dd"
+                  value={dateFormat}
+                  onChange={(_, d) => setDateFormat(d.value)}
+                />
+                <Text className={s.muted} block>
+                  Used by every date field of this structure that has no format of its own.
+                </Text>
+              </label>
+
               <div>
                 <label>
                   <Text block weight="semibold">

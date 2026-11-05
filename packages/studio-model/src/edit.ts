@@ -74,11 +74,14 @@ function cleanGeneration(
     return copy;
   }
   const via = s.generation.viaRelationshipIds?.filter((id) => relIds.has(id));
+  const helpers = s.generation.helperDatasetIds?.filter((id) => datasets.has(id));
   return {
     ...s,
     generation: {
       driverDatasetId: s.generation.driverDatasetId,
       ...(via && via.length > 0 ? { viaRelationshipIds: via } : {}),
+      ...(helpers && helpers.length > 0 ? { helperDatasetIds: helpers } : {}),
+      ...(s.generation.status ? { status: s.generation.status } : {}),
     },
   };
 }

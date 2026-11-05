@@ -24,13 +24,20 @@ export const TargetFieldSchema = z.strictObject({
   group: z.string().optional(),
   /** Original importance text from the definition (for example "mandatory for sheet"). */
   importance: z.string().optional(),
+  /** Layout of the dates this field expects (for example yyyy-MM-dd). Overrides the structure default. */
+  dateFormat: z.string().min(1).optional(),
 });
 export type TargetField = z.infer<typeof TargetFieldSchema>;
 
 /** Which source dataset drives the rows of a structure. Semantics are finalised in SPEC-013. */
 export const RowGenerationSchema = z.strictObject({
+  /** The main source table of the structure. */
   driverDatasetId: SourceDatasetIdSchema,
   viaRelationshipIds: z.array(RelationshipIdSchema).optional(),
+  /** Other tables that may feed fields of the structure. Informational; a field from one needs a confirmed join. */
+  helperDatasetIds: z.array(SourceDatasetIdSchema).optional(),
+  /** Whether the pairing of table and structure still waits for the user. Absent means confirmed. */
+  status: z.enum(['suggested', 'confirmed']).optional(),
 });
 export type RowGeneration = z.infer<typeof RowGenerationSchema>;
 
@@ -53,15 +60,36 @@ export const TargetStructureSchema = z.strictObject({
   technicalName: z.string().min(1).optional(),
   /** Original importance text of the structure (for example "mandatory"). */
   importance: z.string().optional(),
+  /** Default date layout for the fields of this structure that have none of their own. */
+  dateFormat: z.string().min(1).optional(),
+  /** Name of the sheet of the target template workbook that this structure's data goes into. */
+  templateSheet: z.string().min(1).optional(),
   fields: z.array(TargetFieldSchema),
   generation: RowGenerationSchema.optional(),
   parent: ParentLinkSchema.optional(),
 });
 export type TargetStructure = z.infer<typeof TargetStructureSchema>;
 
+/** A target template workbook (for example an SAP migration template), kept so output can be written into it. */
+export const TargetTemplateSchema = z.strictObject({
+  fileName: z.string().min(1),
+  /** The .xlsx file, base64 text. */
+  base64: z.string().min(1),
+});
+export type TargetTemplate = z.infer<typeof TargetTemplateSchema>;
+
 export const TargetDefinitionSchema = z.strictObject({
   id: TargetDefinitionIdSchema,
   name: z.string().min(1),
   structures: z.array(TargetStructureSchema),
+  template: TargetTemplateSchema.optional(),
 });
 export type TargetDefinition = z.infer<typeof TargetDefinitionSchema>;
+
+/** The date layout a target field expects: its own, else the structure default. */
+export function targetDateFormat(
+  structure: Pick<TargetStructure, 'dateFormat'>,
+  field: Pick<TargetField, 'dateFormat'>,
+): string | undefined {
+  return field.dateFormat ?? structure.dateFormat;
+}

@@ -2,6 +2,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  Input,
   MessageBar,
   MessageBarBody,
   OverlayDrawer,
@@ -28,7 +29,14 @@ import {
 import { useMemo, useState } from 'react';
 import { SeverityBadge } from '../components/common';
 import { useStudio } from '../context';
-import { ConditionForm, ConstantForm, DirectForm, LookupForm, RoutineForm } from './forms';
+import {
+  ConditionForm,
+  ConstantForm,
+  DirectForm,
+  LookupForm,
+  RoutineForm,
+  settingsTemplate,
+} from './forms';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalL },
@@ -85,6 +93,12 @@ function EditorBody({
   }, [row, state.project, preset]);
   const [draft, setDraft] = useState<MappingDraft | undefined>(initial.draft);
   const [locked, setLocked] = useState(initial.locked);
+  const targetStructure = state.project.targetDefinition?.structures.find(
+    (x) => x.id === row.structureId,
+  );
+  const fieldFormat = targetStructure?.fields.find((f) => f.id === row.fieldId)?.dateFormat;
+  const structureFormat = targetStructure?.dateFormat;
+  const targetFormat = fieldFormat ?? structureFormat;
   const [needsReview, setNeedsReview] = useState(row.mapping?.status === 'needsReview');
 
   const result = useMemo(
@@ -142,6 +156,31 @@ function EditorBody({
             {row.technicalName && <Badge appearance="outline">{row.technicalName}</Badge>}
           </div>
 
+          {(row.datatype === 'date' || row.datatype === 'dateTime') && (
+            <label>
+              <Text block weight="semibold">
+                Date format of this field
+              </Text>
+              <Input
+                aria-label="Target date format"
+                placeholder={structureFormat ?? 'for example yyyy-MM-dd'}
+                value={fieldFormat ?? ''}
+                onChange={(_, d) =>
+                  send({
+                    type: 'targetFieldFormat',
+                    structureId: row.structureId,
+                    fieldId: row.fieldId,
+                    dateFormat: d.value.trim() === '' ? null : d.value.trim(),
+                  })
+                }
+              />
+              <Text className={s.muted}>
+                {structureFormat ? `Empty uses the structure default (${structureFormat}). ` : ''}
+                Date Format steps start with this as their output format.
+              </Text>
+            </label>
+          )}
+
           <label>
             <Text block weight="semibold">
               Mapping type
@@ -173,20 +212,40 @@ function EditorBody({
           )}
 
           {draft?.type === 'direct' && <DirectForm draft={draft} onChange={setDraft} />}
-          {draft?.type === 'constant' && (
-            <ConstantForm
-              draft={draft}
-              onChange={setDraft}
-              target={{
-                structureId: row.structureId,
-                fieldId: row.fieldId,
-                datatype: row.datatype,
-              }}
-            />
+          {draft?.type === 'direct' && (row.datatype === 'date' || row.datatype === 'dateTime') && (
+            <MessageBar intent="info" data-testid="date-direct-hint">
+              <MessageBarBody>
+                A direct mapping copies the source date as it is. If the source is written
+                differently{targetFormat ? ` from ${targetFormat}` : ''}, convert it.{' '}
+                <Button
+                  size="small"
+                  data-testid="convert-to-date-format"
+                  onClick={() =>
+                    setDraft({
+                      type: 'routine',
+                      source: draft.source,
+                      steps: [
+                        {
+                          kind: 'routine',
+                          routineId: 'date.convert',
+                          configuration: settingsTemplate('date.convert', targetFormat),
+                          onError: 'stop',
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Convert with Date Format
+                </Button>
+              </MessageBarBody>
+            </MessageBar>
           )}
+          {draft?.type === 'constant' && <ConstantForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'lookup' && <LookupForm draft={draft} onChange={setDraft} />}
           {draft?.type === 'conditional' && <ConditionForm draft={draft} onChange={setDraft} />}
-          {draft?.type === 'routine' && <RoutineForm draft={draft} onChange={setDraft} />}
+          {draft?.type === 'routine' && (
+            <RoutineForm draft={draft} onChange={setDraft} targetDateFormat={targetFormat} />
+          )}
 
           {result && !result.ok && (
             <MessageBar intent="warning" data-testid="editor-problems">

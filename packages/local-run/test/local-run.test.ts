@@ -11,6 +11,7 @@ import {
   type Project,
   type RunDefinition,
   type SourceRows,
+  toBase64,
 } from '@mms/mapping-core';
 import { createBuiltInRegistry } from '@mms/routine-library';
 import { fileBytes, runLocal, type LocalRunOptions } from '../src/index.js';
@@ -484,5 +485,60 @@ describe('local-run boundaries', () => {
         /node:|\bprocess\.|\bBuffer\b|\bdocument\.|\bwindow\.|Math\.random|Date\.now|new Date|\bfetch\(|\beval\(|new Function/,
       );
     }
+  });
+});
+
+describe('target template workbook', () => {
+  const tech: Record<string, Record<string, string>> = {
+    'Profit Center': {
+      PC: 'PROFITCENTERFOREDIT',
+      Name: 'PROFITCENTERNAME',
+      Region: 'REGION',
+      From: 'VALIDITYSTARTDATE',
+    },
+    'Company Codes': { PC: 'PROFITCENTERFOREDIT', CC: 'COMPANYCODEFOREDIT' },
+  };
+  const templateBytes = new Uint8Array(
+    readFileSync(
+      new URL('../../../test-data/profit-center/target/data_pc_template.xlsx', import.meta.url),
+    ),
+  );
+  function withTemplate(): { snapshot: MappingSnapshot; data: SourceRows[] } {
+    const { snapshot, data } = setup();
+    const target = snapshot.targetDefinition;
+    const next = MappingSnapshotSchema.parse({
+      ...snapshot,
+      targetDefinition: {
+        ...target,
+        template: { fileName: 'data_pc.xlsx', base64: toBase64(templateBytes) },
+        structures: target.structures.map((st) => ({
+          ...st,
+          templateSheet: st.name,
+          fields: st.fields.map((f) => ({ ...f, technicalName: tech[st.name]![f.displayName]! })),
+        })),
+      },
+    });
+    return { snapshot: next, data };
+  }
+
+  it('writes the rows that passed into the template, from row 9, next to the other files', () => {
+    const { snapshot, data } = withTemplate();
+    const r = runLocal(snapshot, data, def(), opts({ csv: { lineEnding: '\n' } }));
+    const f = file(r, 'data_pc.xlsx');
+    expect(f).toMatchObject({ format: 'xlsx', kind: 'output', rows: 3 + 4 });
+    const read = (sheet: string) =>
+      importXlsx(f!.content as Uint8Array, { fileName: 'x.xlsx', sheets: [sheet], headerRow: 8 });
+    const pc = read('Profit Center');
+    if (!pc.ok) throw new Error(JSON.stringify(pc.issues));
+    const rows = pc.value.rows[0]!.rows;
+    expect(rows.map((x) => x[0])).toEqual(['P100', 'P200', 'P400']);
+    expect(rows[0]!.slice(0, 3)).toEqual(['P100', null, '20260101']); // columns by technical name
+    expect(file(r, 'Profit Center.csv')).toBeDefined(); // the normal files are still written
+  });
+
+  it('without a template nothing changes', () => {
+    const { snapshot, data } = setup();
+    const r = runLocal(snapshot, data, def(), opts());
+    expect(r.files.some((f) => f.format === 'xlsx')).toBe(false);
   });
 });

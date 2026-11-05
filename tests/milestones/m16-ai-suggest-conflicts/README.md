@@ -1,5 +1,7 @@
 # M16 — AI suggestions, confidence, conflicts, hard-coded values and delete (SPEC-036)
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: `apps/mapping-studio/e2e/mapping-edits.spec.ts` (delete with undo, hard-code, reused-source conflict) and `packages/studio-model/test/conflicts.test.ts`.
+
 AI proposes, a person approves. The AI is a local Ollama model by default, or Anthropic's API with the user's own key. Only field metadata is sent, never row values.
 
 | Case | Proves |

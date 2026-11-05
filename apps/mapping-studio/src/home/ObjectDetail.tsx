@@ -1,12 +1,16 @@
 import {
   Button,
   Dialog,
+  DialogActions,
   DialogBody,
+  DialogContent,
   DialogSurface,
+  DialogTitle,
   MessageBar,
   MessageBarBody,
 } from '@fluentui/react-components';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { stamp } from '@mms/workspace-files';
 import { LOGO_SRC, STEPS, StatusTag, currentStep, formatWhen } from '../components/brand';
 import { useWorkspace, type ObjectCard, type ObjectFiles } from '../workspace';
 import { ConfirmArchive } from './shared';
@@ -39,6 +43,9 @@ export function ObjectDetail({ card, onClose }: { card: ObjectCard; onClose: () 
   const [files, setFiles] = useState<ObjectFiles['files']>([]);
   const [confirm, setConfirm] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
+  const [pendingUpload, setPendingUpload] = useState<File | undefined>();
+  const [info, setInfo] = useState<string | undefined>();
+  const uploadInput = useRef<HTMLInputElement>(null);
   const sum = card.summary;
   const now = currentStep(sum);
   const allDone = now === 4 && sum !== undefined && sum.state !== 'draft';
@@ -59,8 +66,44 @@ export function ObjectDetail({ card, onClose }: { card: ObjectCard; onClose: () 
     if (!r.ok) setMessage(r.message);
   };
 
+  const download = async () => {
+    const r = await ws.downloadMapping(
+      card.customerFolder,
+      card.folder,
+      [card.customerName, card.object.name, stamp(new Date().toISOString())]
+        .map((p) => p.replace(/[\\/:*?"<>|]+/g, '_'))
+        .join('_'),
+    );
+    if (!r.ok) setMessage(r.message);
+  };
+
+  const upload = async () => {
+    const file = pendingUpload;
+    setPendingUpload(undefined);
+    if (!file) return;
+    const r = await ws.uploadMapping(card.customerFolder, card.folder, file);
+    if (r.ok) setInfo(`The mapping was replaced with "${file.name}".`);
+    else setMessage(r.message);
+  };
+
   return (
     <>
+      <input
+        ref={uploadInput}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        data-testid="upload-mapping-input"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) {
+            setMessage(undefined);
+            setInfo(undefined);
+            setPendingUpload(f);
+          }
+        }}
+      />
       <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
         <DialogSurface
           aria-label={`${card.object.name} details`}
@@ -93,12 +136,18 @@ export function ObjectDetail({ card, onClose }: { card: ObjectCard; onClose: () 
                   {sum && <StatusTag state={sum.state} testId="detail-status" />}
                 </div>
               </div>
+              <Button data-testid="download-mapping" onClick={() => void download()}>
+                Download mapping
+              </Button>
+              <Button data-testid="upload-mapping" onClick={() => uploadInput.current?.click()}>
+                Upload mapping
+              </Button>
               <Button onClick={() => setConfirm(true)}>Archive</Button>
               <Button disabled={!sum || sum.snapshots === 0} onClick={() => void open('ready')}>
                 Run all rows
               </Button>
               <Button appearance="primary" onClick={() => void open()}>
-                Open project
+                Open mapping
               </Button>
               <Button appearance="subtle" aria-label="Close" onClick={onClose}>
                 ×
@@ -115,6 +164,11 @@ export function ObjectDetail({ card, onClose }: { card: ObjectCard; onClose: () 
                 overflowY: 'auto',
               }}
             >
+              {info && (
+                <MessageBar intent="success" data-testid="detail-info">
+                  <MessageBarBody>{info}</MessageBarBody>
+                </MessageBar>
+              )}
               {message && (
                 <MessageBar intent="error" data-testid="detail-message">
                   <MessageBarBody>{message}</MessageBarBody>
@@ -312,6 +366,27 @@ export function ObjectDetail({ card, onClose }: { card: ObjectCard; onClose: () 
                 </section>
               </div>
             </div>
+            <Dialog
+              open={pendingUpload !== undefined}
+              onOpenChange={(_, d) => !d.open && setPendingUpload(undefined)}
+            >
+              <DialogSurface aria-label="Replace mapping" data-testid="confirm-upload">
+                <DialogBody>
+                  <DialogTitle>Replace the mapping of {card.object.name}?</DialogTitle>
+                  <DialogContent>
+                    The whole project of this object (files, targets, mapping, snapshots) is
+                    replaced with the content of "{pendingUpload?.name}". Download the current
+                    mapping first if you want to keep it.
+                  </DialogContent>
+                  <DialogActions>
+                    <Button appearance="primary" onClick={() => void upload()}>
+                      Replace
+                    </Button>
+                    <Button onClick={() => setPendingUpload(undefined)}>Cancel</Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
           </DialogBody>
         </DialogSurface>
       </Dialog>

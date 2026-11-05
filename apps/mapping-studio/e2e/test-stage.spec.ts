@@ -254,7 +254,7 @@ test.describe('Before running and Ready checklist', () => {
       'Required field "Valid From" of "Profit Center" has no mapping.',
     );
     await goToStage(page, 'ready');
-    await expect(page.getByTestId('ready-summary')).toHaveText('3 of 10 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('3 of 9 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toContainText('Waiting for');
     await page
       .getByRole('listitem')
@@ -299,7 +299,7 @@ test.describe('Before running and Ready checklist', () => {
     await runTest(page);
     await expect(page.getByTestId('run-summary')).toContainText('The test ran without errors.');
     await goToStage(page, 'ready');
-    await expect(page.getByTestId('ready-summary')).toHaveText('8 of 10 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('7 of 9 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toHaveText('Ready to save a snapshot');
     await expect(page.getByTestId('stage-test-summary')).toContainText('Last run clean');
   });

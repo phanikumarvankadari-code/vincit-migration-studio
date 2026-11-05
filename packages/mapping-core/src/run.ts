@@ -43,7 +43,7 @@ export const RunResultSchema = z.strictObject({
         kind: z.enum(['output', 'errors', 'diagnostics', 'summary']),
         targetStructureId: TargetStructureIdSchema.optional(),
         fileName: z.string().min(1),
-        format: z.enum(['csv', 'xlsx', 'json']),
+        format: z.enum(['csv', 'xlsx', 'xml', 'json']),
       }),
     )
     .optional(),

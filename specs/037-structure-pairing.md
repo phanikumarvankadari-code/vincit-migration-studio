@@ -1,5 +1,7 @@
 # SPEC-037 Structure Pairing
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: the structure driver (`generation`) set in structure settings. The Structures step, pair suggestions and scoped mapper are gone.
+
 ## Objective
 Map structure to structure first. Migrations happen between similar structures whose names differ, so the app proposes which source dataset feeds which target structure, a person confirms, and the field mapper then works inside that pair.
 

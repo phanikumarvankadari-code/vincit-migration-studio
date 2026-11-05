@@ -9,6 +9,7 @@ import {
   type RowGeneration,
   type SourceRows,
   type TargetDefinition,
+  type SourceDefinition,
 } from '@mms/mapping-core';
 import { applyFieldDictionary, type FieldDictionary, type ImportedSource } from '@mms/file-import';
 import { suggestRelationships, type DatasetData } from '@mms/relationships';
@@ -60,6 +61,8 @@ export type StudioAction =
       status: Relationship['status'];
       at: string;
     }
+  /** Rejects every join that is still only suggested. Confirmed joins stay. */
+  | { type: 'relationshipsRejectedAll'; at: string }
   | {
       type: 'relationshipJoinType';
       relationshipId: string;
@@ -72,6 +75,16 @@ export type StudioAction =
       structureId: string;
       generation: RowGeneration | null;
       parent: ParentLink | null;
+      /** Default date layout of the structure. Left as it is when absent, removed when null. */
+      dateFormat?: string | null;
+      at: string;
+    }
+  | {
+      type: 'targetFieldFormat';
+      structureId: string;
+      fieldId: string;
+      /** The date layout the field expects; null removes it. */
+      dateFormat: string | null;
       at: string;
     }
   | {
@@ -203,6 +216,8 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
         enriched = applied.source;
         dictDiagnostics = applied.diagnostics;
       }
+      // Reading the same file again keeps the descriptions that were added to its tables and fields.
+      if (old) enriched = carryDescriptions(enriched, old);
       const data: Record<string, SourceRows> = Object.fromEntries(
         Object.entries(state.data).filter(([id]) => !oldIds.has(id)),
       );
@@ -271,6 +286,22 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
       return syncRelationships(next, action.at);
     }
 
+    case 'relationshipsRejectedAll': {
+      const relationships = state.project.mappingDefinition.relationships.map((r) =>
+        r.status === 'suggested' ? { ...r, status: 'rejected' as const } : r,
+      );
+      return withProject(
+        state,
+        stamp(
+          {
+            ...state.project,
+            mappingDefinition: { ...state.project.mappingDefinition, relationships },
+          },
+          action.at,
+        ),
+      );
+    }
+
     case 'relationshipDecided': {
       const relationships = state.project.mappingDefinition.relationships.map((r) =>
         r.id === action.relationshipId ? { ...r, status: action.status } : r,
@@ -313,6 +344,11 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
           ...s,
           ...(old?.generation && !s.generation ? { generation: old.generation } : {}),
           ...(old?.parent && !s.parent ? { parent: old.parent } : {}),
+          ...(old?.dateFormat && !s.dateFormat ? { dateFormat: old.dateFormat } : {}),
+          fields: s.fields.map((f) => {
+            const was = old?.fields.find((x) => x.id === f.id)?.dateFormat;
+            return was && !f.dateFormat ? { ...f, dateFormat: was } : f;
+          }),
         };
       });
       const project = pruneDangling(
@@ -329,12 +365,36 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
         const copy = { ...s };
         delete copy.generation;
         delete copy.parent;
+        if (action.dateFormat !== undefined) delete copy.dateFormat;
         return {
           ...copy,
+          ...(action.dateFormat ? { dateFormat: action.dateFormat } : {}),
           ...(action.generation ? { generation: action.generation } : {}),
           ...(action.parent ? { parent: action.parent } : {}),
         };
       });
+      return withProject(
+        state,
+        stamp({ ...state.project, targetDefinition: { ...target, structures } }, action.at),
+      );
+    }
+
+    case 'targetFieldFormat': {
+      const target = state.project.targetDefinition;
+      if (!target) return state;
+      const structures = target.structures.map((s) =>
+        s.id !== action.structureId
+          ? s
+          : {
+              ...s,
+              fields: s.fields.map((f) => {
+                if (f.id !== action.fieldId) return f;
+                const next = { ...f };
+                delete next.dateFormat;
+                return action.dateFormat ? { ...next, dateFormat: action.dateFormat } : next;
+              }),
+            },
+      );
       return withProject(
         state,
         stamp({ ...state.project, targetDefinition: { ...target, structures } }, action.at),
@@ -464,4 +524,27 @@ export function datasetsWithoutData(
       .filter((d) => !state.data[d.id])
       .map((d) => ({ datasetId: d.id as string, name: d.name, sourceName: s.name })),
   );
+}
+
+/** Copies table and field descriptions from an earlier version of a source onto the new one, matched by ID. */
+function carryDescriptions(next: SourceDefinition, old: SourceDefinition): SourceDefinition {
+  const oldDatasets = new Map(old.datasets.map((d) => [d.id as string, d]));
+  return {
+    ...next,
+    datasets: next.datasets.map((d) => {
+      const before = oldDatasets.get(d.id);
+      if (!before) return d;
+      const fields = new Map(before.fields.map((f) => [f.id as string, f.description]));
+      return {
+        ...d,
+        ...(d.description === undefined && before.description
+          ? { description: before.description }
+          : {}),
+        fields: d.fields.map((f) => {
+          const text = fields.get(f.id);
+          return f.description === undefined && text ? { ...f, description: text } : f;
+        }),
+      };
+    }),
+  };
 }

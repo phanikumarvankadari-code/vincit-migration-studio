@@ -75,7 +75,7 @@ test.describe('Sources stage (SPEC-002 to 006 in the UI)', () => {
   test('suggests joins, explains them, and only a confirmed join counts', async ({ page }) => {
     await openApp(page);
     await addProfitCenterSources(page, true);
-    await expect(page.getByTestId('stage-sources-summary')).toContainText('3 joins to confirm');
+    await expect(page.getByTestId('stage-sources-summary')).toContainText('3 joins suggested');
     const card = page.getByTestId('relationship-rel-CEPC-CEPCT');
     await expect(card).toContainText('CEPC ⇄ CEPCT');
     await expect(card).toContainText('Suggested');
@@ -90,9 +90,28 @@ test.describe('Sources stage (SPEC-002 to 006 in the UI)', () => {
     await expect(page.getByTestId('relationship-status-rel-CEPC-CEPC_BUKRS')).toHaveText(
       'Rejected',
     );
-    await expect(page.getByTestId('stage-sources-summary')).toContainText('1 join to confirm');
+    await expect(page.getByTestId('stage-sources-summary')).toContainText('1 join suggested');
     await card.getByRole('button', { name: 'Undo' }).click();
     await expect(page.getByTestId('relationship-status-rel-CEPC-CEPCT')).toHaveText('Suggested');
+  });
+
+  test('joins are optional: Reject all rejects every suggestion, and nothing blocks the stage', async ({
+    page,
+  }) => {
+    await openApp(page);
+    await addProfitCenterSources(page, true);
+    await page
+      .getByTestId('relationship-rel-CEPC-CEPCT')
+      .getByRole('button', { name: 'Confirm join' })
+      .click();
+    await expect(page.getByTestId('stage-sources-summary')).toContainText('1 join confirmed');
+    await page.getByTestId('reject-all-joins').click();
+    await expect(page.getByTestId('relationship-status-rel-CEPC-CEPC_BUKRS')).toHaveText(
+      'Rejected',
+    );
+    await expect(page.getByTestId('relationship-status-rel-CEPC-CEPCT')).toHaveText('Confirmed');
+    await expect(page.getByTestId('stage-sources-summary')).not.toContainText('suggested');
+    await expect(page.getByTestId('reject-all-joins')).toHaveCount(0);
   });
 
   test('the join type can be changed', async ({ page }) => {

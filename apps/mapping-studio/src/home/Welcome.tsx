@@ -10,11 +10,11 @@ import {
 } from './shared';
 
 const STEPS = [
-  ['1', 'Add a customer', 'The migration engagement that everything below belongs to.'],
+  ['1', 'Add a project', 'The migration engagement that everything below belongs to.'],
   [
     '2',
     'Add business objects',
-    'Profit Center, Cost Center, Vendor: one project each, with its own files.',
+    'Profit Center, Cost Center, Vendor: one mapping each, with its own files.',
   ],
   [
     '3',
@@ -35,7 +35,7 @@ export function Welcome() {
   const submit = async () => {
     setMessage(undefined);
     if (name.trim() === '') {
-      setMessage('Give the customer a name.');
+      setMessage('Give the project a name.');
       return;
     }
     if (where === 'folder' && ws.connection.kind !== 'folder') {
@@ -109,7 +109,7 @@ export function Welcome() {
               maxWidth: 540,
             }}
           >
-            Vincit Migration Studio keeps each customer’s source files, mappings, test results and
+            Vincit Migration Studio keeps each project’s source files, mappings, test results and
             transformed output together in a folder your team already shares.
           </p>
           <ol
@@ -166,7 +166,7 @@ export function Welcome() {
             boxShadow: '0 8px 28px rgba(21,24,30,.08)',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Create your first customer</h2>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Create your first project</h2>
           {message && (
             <MessageBar intent="error" data-testid="home-message">
               <MessageBarBody>{message}</MessageBarBody>
@@ -181,9 +181,9 @@ export function Welcome() {
               fontWeight: 600,
             }}
           >
-            Customer name
+            Project name
             <Input
-              aria-label="Customer name"
+              aria-label="Project name"
               placeholder="For example, Vincit"
               value={name}
               onChange={(_, d) => setName(d.value)}
@@ -287,7 +287,7 @@ export function Welcome() {
             </label>
           </fieldset>
           <Button appearance="primary" size="large" onClick={() => void submit()}>
-            {where === 'folder' ? 'Choose folder and create customer' : 'Create customer'}
+            {where === 'folder' ? 'Choose folder and create project' : 'Create project'}
           </Button>
           <div
             style={{
@@ -301,8 +301,8 @@ export function Welcome() {
           >
             <Text weight="semibold">Already have a workspace in OneDrive?</Text>
             <Text size={200} className="mms-muted">
-              Open the folder that holds your customers. Everything in it loads, and you land on All
-              customers.
+              Open the folder that holds your projects. Everything in it loads, and you land on All
+              projects.
             </Text>
             <div>
               <OpenWorkspaceButton onMessage={setMessage} />

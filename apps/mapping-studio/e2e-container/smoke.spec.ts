@@ -6,7 +6,7 @@ test.describe('container smoke test (SPEC-030)', () => {
     expect(health.status()).toBe(200);
     await page.goto('/');
     await expect(page.getByTestId('home')).toBeVisible();
-    await expect(page.getByText('Create your first customer')).toBeVisible();
+    await expect(page.getByText('Create your first project')).toBeVisible();
   });
 
   test('AC-4 a file on the mounted volume is listed and downloadable', async ({ request }) => {

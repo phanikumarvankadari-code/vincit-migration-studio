@@ -1,5 +1,7 @@
 # SPEC-031 Two-Panel Mapper and Mapping Suggestions
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: the two-panel mapper (drag, click, lines, edit, remove). Suggestions and `@mms/mapping-suggest` are gone.
+
 ## Objective
 Replace the node-graph Visual Mapper with a two-panel mapper in the style of SAP CPI message mapping: sources on the left, target fields on the right, lines between them. The system proposes mappings; the user accepts or rejects each one (PD-010).
 

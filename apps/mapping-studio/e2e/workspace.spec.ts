@@ -40,15 +40,15 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
     await expect(page.getByTestId('kpi-Business objects')).toContainText('2');
   });
 
-  test('AC-2 All customers shows cards and the projects of every customer', async ({ page }) => {
+  test('AC-2 All projects shows cards and the projects of every customer', async ({ page }) => {
     await openHome(page);
     await createFirstCustomer(page, 'Acme Oy');
     await addObject(page, 'Profit Center');
     await addObject(page, 'Cost Center');
-    await page.getByRole('button', { name: 'All customers' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await page.getByRole('button', { name: 'All projects' }).click();
+    await expect(page.getByTestId('home-title')).toHaveText('Projects');
     await expect(page.getByTestId('portfolio-summary')).toHaveText(
-      '1 customer · 2 business objects · 0 runs saved',
+      '1 project · 2 business objects · 0 runs saved',
     );
     await expect(page.getByTestId('customer-Acme Oy')).toContainText('2 business objects');
     await expect(page.getByTestId('customer-Acme Oy')).toContainText('2 draft');
@@ -65,19 +65,19 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
   test('AC-2 filter to customers that need attention, and sort', async ({ page }) => {
     await openHome(page);
     await createFirstCustomer(page, 'Beta Ab');
-    await page.getByRole('button', { name: 'All customers' }).click();
+    await page.getByRole('button', { name: 'All projects' }).click();
     await addCustomer(page, 'Acme Oy');
     await addObject(page, 'Profit Center'); // no source files: needs attention
-    await page.getByRole('button', { name: 'All customers' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await page.getByRole('button', { name: 'All projects' }).click();
+    await expect(page.getByTestId('home-title')).toHaveText('Projects');
     await expect(page.getByTestId('customer-attention-Acme Oy')).toHaveText('1 to check');
     await page.getByRole('button', { name: /Needs attention \(1\)/ }).click();
     await expect(page.getByTestId('customer-Acme Oy')).toBeVisible();
     await expect(page.getByTestId('customer-Beta Ab')).toHaveCount(0);
     await page.getByRole('button', { name: /^All \(2\)/ }).click();
-    await page.getByLabel('Sort customers').selectOption('name');
+    await page.getByLabel('Sort projects').selectOption('name');
     const names = await page
-      .locator('[data-testid^="customer-"][aria-label^="Open customer"]')
+      .locator('[data-testid^="customer-"][aria-label^="Open project"]')
       .allTextContents();
     expect(names[0]).toContain('Acme Oy');
     expect(names[1]).toContain('Beta Ab');
@@ -96,15 +96,15 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
 
   test('AC-3 the breadcrumb leads back through the levels', async ({ page }) => {
     await openWorkspaceObject(page);
-    await page.getByRole('button', { name: 'All customers' }).click();
-    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await page.getByRole('button', { name: 'All projects' }).click();
+    await expect(page.getByTestId('home-title')).toHaveText('Projects');
     await page.getByTestId('customer-Acme Oy').click();
     await expect(page.getByTestId('home-title')).toHaveText('Acme Oy');
     await page
       .getByRole('navigation', { name: 'Breadcrumb' })
-      .getByRole('button', { name: 'All customers' })
+      .getByRole('button', { name: 'All projects' })
       .click();
-    await expect(page.getByTestId('home-title')).toHaveText('Customers');
+    await expect(page.getByTestId('home-title')).toHaveText('Projects');
   });
 
   test('AC-4 the object detail shows the steps, counts, files and outputs', async ({ page }) => {
@@ -124,7 +124,7 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
     await expect(detail.getByTestId('detail-files')).toContainText('CEPC.csv');
     await expect(detail.getByTestId('detail-files')).toContainText('CEPC_BUKRS.csv');
     await expect(detail.getByTestId('detail-runs')).toContainText('No output saved yet.');
-    await detail.getByRole('button', { name: 'Open project' }).click();
+    await detail.getByRole('button', { name: 'Open mapping' }).click();
     await expect(page.getByTestId('stage-target-summary')).toHaveText('2 structures, 6 fields');
   });
 
@@ -170,10 +170,10 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
     await openHome(page);
     await createFirstCustomer(page, 'Acme Oy');
     await addObject(page, 'Profit Center');
-    await page.getByRole('button', { name: 'All customers' }).click();
+    await page.getByRole('button', { name: 'All projects' }).click();
     await addCustomer(page, 'Beta Ab');
     await addObject(page, 'Vendor');
-    await page.getByRole('button', { name: 'All customers' }).click();
+    await page.getByRole('button', { name: 'All projects' }).click();
     await page.getByTestId('customer-Acme Oy').click();
     await expect(page.getByTestId('object-Profit Center')).toBeVisible();
     await expect(page.getByTestId('object-Vendor')).toHaveCount(0);
@@ -197,18 +197,18 @@ test.describe('Vincit Migration Studio: customers and business objects (SPEC-032
       .getByRole('button', { name: 'Archive' })
       .click();
     await expect(page.getByTestId('object-Profit Center')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Archive customer' }).click();
+    await page.getByRole('button', { name: 'Archive project' }).click();
     await page
       .getByRole('dialog', { name: 'Archive' })
       .getByRole('button', { name: 'Archive' })
       .click();
-    await expect(page.getByText('Create your first customer')).toBeVisible();
+    await expect(page.getByText('Create your first project')).toBeVisible();
   });
 
   test('empty names are refused with a message', async ({ page }) => {
     await openHome(page);
-    await page.getByRole('button', { name: 'Create customer' }).click();
-    await expect(page.getByTestId('home-message')).toHaveText('Give the customer a name.');
+    await page.getByRole('button', { name: 'Create project' }).click();
+    await expect(page.getByTestId('home-message')).toHaveText('Give the project a name.');
     await createFirstCustomer(page, 'Acme Oy');
     await page.getByRole('button', { name: 'Add business object' }).first().click();
     await page.getByRole('button', { name: 'Create business object' }).click();

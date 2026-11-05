@@ -1,151 +1,160 @@
 import { describe, expect, it } from 'vitest';
-import { ProjectSchema, type Project } from '@mms/mapping-core';
-import { clearDriver, pairViews, scopeOf, setDriver } from '../src/index.js';
+import { deserializeProject, serializeProject, validateProject } from '@mms/mapping-core';
+import {
+  applyDescriptions,
+  applyPairings,
+  autoImportTarget,
+  confirmPairings,
+  suggestedPairings,
+} from '../src/index.js';
+import { apply, at, newState, ok, smallSources, targetFile } from './helpers.js';
 
-const NOW = '2026-10-22T10:00:00.000Z';
-const LATER = '2026-10-22T11:00:00.000Z';
+const AT = '2026-11-05T12:00:00.000Z';
 
-function make(rels: object[] = [], maps: object[] = []): Project {
-  const ds = (id: string) => ({
-    id,
-    sourceId: 'src',
-    name: id,
-    displayName: id,
-    fields: [{ id: `${id}-f`, datasetId: id, displayName: 'F', datatype: 'string' }],
-  });
-  return ProjectSchema.parse({
-    id: 'p',
-    name: 'p',
-    businessEntity: 'x',
-    projectState: 'draft',
-    createdAt: NOW,
-    updatedAt: NOW,
-    sourceDefinitions: [
-      {
-        id: 'src',
-        name: 'S',
-        sourceType: 'csv',
-        location: { kind: 'localFile', path: 'S.csv' },
-        datasets: [ds('A'), ds('B'), ds('C')],
-      },
-    ],
-    targetDefinition: {
-      id: 'tgt',
-      name: 'T',
-      structures: [
+function setup() {
+  const { cepc, bukrs } = smallSources();
+  const preview = ok(autoImportTarget(targetFile(), 'Profit Center'));
+  const s = apply(
+    newState(),
+    { type: 'sourceAdded', imported: cepc, at: at() },
+    { type: 'sourceAdded', imported: bukrs, at: at() },
+    { type: 'targetLoaded', target: preview.target, at: at() },
+  );
+  const [a, b] = s.project.sourceDefinitions.flatMap((x) => x.datasets);
+  const [pc, cc] = s.project.targetDefinition!.structures;
+  return { s, a: a!, b: b!, pc: pc!, cc: cc! };
+}
+
+describe('pairing structures with their main table', () => {
+  it('sets the main table and the extra tables, suggested; the extra table never equals the main one', () => {
+    const { s, a, b, pc } = setup();
+    const next = applyPairings(
+      s.project,
+      [
         {
-          id: 'st',
-          targetDefinitionId: 'tgt',
-          name: 'One',
-          displayName: 'One',
-          fields: [
-            {
-              id: 't1',
-              targetStructureId: 'st',
-              displayName: 'T1',
-              datatype: 'string',
-              required: false,
-              isKey: false,
-            },
-          ],
-          parent: { parentStructureId: 'st2', keys: [{ childFieldId: 't1', parentFieldId: 'u1' }] },
-        },
-        {
-          id: 'st2',
-          targetDefinitionId: 'tgt',
-          name: 'Two',
-          displayName: 'Two',
-          fields: [
-            {
-              id: 'u1',
-              targetStructureId: 'st2',
-              displayName: 'U1',
-              datatype: 'string',
-              required: false,
-              isKey: false,
-            },
-          ],
+          structureId: pc.id,
+          driverDatasetId: a.id,
+          helperDatasetIds: [b.id, a.id],
+          status: 'suggested',
         },
       ],
-    },
-    mappingDefinition: {
-      id: 'md',
-      mappings: maps,
-      relationships: rels,
-      routineReferences: [],
-      lookupReferences: [],
-      validationRules: [],
-    },
-    routines: [],
-    lookups: [],
-  });
-}
-const rel = (id: string, l: string, r: string, status: string) => ({
-  id,
-  leftDatasetId: l,
-  rightDatasetId: r,
-  keys: [{ leftFieldId: `${l}-f`, rightFieldId: `${r}-f` }],
-  cardinality: 'oneToMany',
-  joinType: 'left',
-  status,
-});
-const map = (target: string, ds: string) => ({
-  id: `m-${target}`,
-  targetStructureId: 'st',
-  targetFieldId: target,
-  mappingType: 'direct',
-  sourceReferences: [{ datasetId: ds, fieldId: `${ds}-f` }],
-  transformations: [],
-  status: 'mapped',
-});
-
-describe('pairing (SPEC-037)', () => {
-  it('sets and clears the driver, keeps the parent link, and leaves the input alone', () => {
-    const p = make();
-    const before = JSON.stringify(p);
-    const paired = setDriver(p, 'st', 'A', LATER);
-    expect(paired.targetDefinition!.structures[0]!.generation).toEqual({ driverDatasetId: 'A' });
-    expect(paired.targetDefinition!.structures[0]!.parent?.parentStructureId).toBe('st2');
-    expect(paired.updatedAt).toBe(LATER);
-    expect(JSON.stringify(p)).toBe(before);
-    const changed = setDriver(paired, 'st', 'B', LATER);
-    expect(changed.targetDefinition!.structures[0]!.generation).toEqual({ driverDatasetId: 'B' });
-    const cleared = clearDriver(changed, 'st', LATER);
-    expect(cleared.targetDefinition!.structures[0]!.generation).toBeUndefined();
-    expect(cleared.targetDefinition!.structures[0]!.parent).toBeDefined();
-    expect(setDriver(p, 'nope', 'A', LATER)).toBe(p);
-  });
-
-  it('shows the driver, the datasets joined to it, which joins are unconfirmed, and datasets read from elsewhere', () => {
-    const p = setDriver(
-      make(
-        [
-          rel('r1', 'A', 'B', 'confirmed'),
-          rel('r2', 'C', 'A', 'suggested'),
-          rel('r3', 'A', 'B', 'rejected'),
-        ],
-        [map('t1', 'A')],
-      ),
-      'st',
-      'A',
-      LATER,
+      AT,
     );
-    const v = pairViews(p)[0]!;
-    expect(v).toMatchObject({ structureId: 'st', driverDatasetId: 'A' });
-    expect(v.helperDatasetIds.sort()).toEqual(['B', 'C']);
-    expect(v.unconfirmedHelperIds).toEqual(['C']);
-    expect(v.strayDatasetIds).toEqual([]);
-    const stray = setDriver(make([], [map('t1', 'C')]), 'st', 'A', LATER);
-    expect(pairViews(stray)[0]!.strayDatasetIds).toEqual(['C']);
-    expect(pairViews(make())[1]).toMatchObject({
-      driverDatasetId: undefined,
-      helperDatasetIds: [],
+    const g = next.targetDefinition!.structures[0]!.generation!;
+    expect(g).toMatchObject({
+      driverDatasetId: a.id,
+      helperDatasetIds: [b.id],
+      status: 'suggested',
+    });
+    expect(validateProject(next)).toEqual([]);
+    expect(suggestedPairings(next).map((x) => x.name)).toEqual([pc.name]);
+  });
+
+  it('confirms one structure, or every suggested one, and leaves the rest alone', () => {
+    const { s, a, b, pc, cc } = setup();
+    const p = applyPairings(
+      s.project,
+      [
+        { structureId: pc.id, driverDatasetId: a.id, status: 'suggested' },
+        { structureId: cc.id, driverDatasetId: b.id, status: 'suggested' },
+      ],
+      AT,
+    );
+    const one = confirmPairings(p, pc.id, AT);
+    expect(one.targetDefinition!.structures.map((x) => x.generation?.status)).toEqual([
+      'confirmed',
+      'suggested',
+      undefined,
+    ]);
+    const all = confirmPairings(one, undefined, AT);
+    expect(suggestedPairings(all)).toEqual([]);
+  });
+
+  it('keeps the relationship choices when the main table stays the same', () => {
+    const { s, a, pc } = setup();
+    const withVia = {
+      ...s.project,
+      targetDefinition: {
+        ...s.project.targetDefinition!,
+        structures: s.project.targetDefinition!.structures.map((x) =>
+          x.id === pc.id
+            ? { ...x, generation: { driverDatasetId: a.id, viaRelationshipIds: [] } }
+            : x,
+        ),
+      },
+    };
+    const next = applyPairings(
+      withVia,
+      [{ structureId: pc.id, driverDatasetId: a.id, status: 'confirmed' }],
+      AT,
+    );
+    expect(next.targetDefinition!.structures[0]!.generation).toMatchObject({
+      driverDatasetId: a.id,
+      status: 'confirmed',
     });
   });
 
-  it('the scope of a structure is its driver and helpers, and undefined while it has no driver', () => {
-    const p = make([rel('r1', 'A', 'B', 'confirmed')]);
-    expect(scopeOf(p, 'st')).toBeUndefined();
-    expect(scopeOf(setDriver(p, 'st', 'A', LATER), 'st')).toEqual(['A', 'B']);
+  it('a pairing that points at a missing table is reported by the project check', () => {
+    const { s, pc } = setup();
+    const bad = applyPairings(
+      s.project,
+      [{ structureId: pc.id, driverDatasetId: 'ds-gone', status: 'suggested' }],
+      AT,
+    );
+    expect(validateProject(bad).length).toBeGreaterThan(0);
+  });
+
+  it('is saved in the project file and read back; an old file without pairing details still loads', () => {
+    const { s, a, b, pc } = setup();
+    const p = applyPairings(
+      s.project,
+      [
+        {
+          structureId: pc.id,
+          driverDatasetId: a.id,
+          helperDatasetIds: [b.id],
+          status: 'suggested',
+        },
+      ],
+      AT,
+    );
+    const back = ok(deserializeProject(serializeProject(p)));
+    expect(back.targetDefinition!.structures[0]!.generation).toEqual(
+      p.targetDefinition!.structures[0]!.generation,
+    );
+    const old = { ...s.project };
+    expect(ok(deserializeProject(serializeProject(old)))).toBeTruthy();
+  });
+});
+
+describe('descriptions of source tables and fields', () => {
+  it('are set by ID, ignore unknown IDs, and survive reading the same file again', () => {
+    const { s, a } = setup();
+    const f = a.fields[0]!;
+    const next = applyDescriptions(
+      s.project,
+      {
+        tables: [
+          { datasetId: a.id, description: 'Parents' },
+          { datasetId: 'nope', description: 'x' },
+        ],
+        fields: [{ datasetId: a.id, fieldId: f.id, description: 'Profit center number' }],
+      },
+      AT,
+    );
+    const ds = next.sourceDefinitions.flatMap((x) => x.datasets).find((d) => d.id === a.id)!;
+    expect(ds.description).toBe('Parents');
+    expect(ds.fields[0]!.description).toBe('Profit center number');
+    const again = apply(
+      { ...s, project: next },
+      { type: 'sourceAdded', imported: smallSources().cepc, at: at() },
+    );
+    const ds2 = again.project.sourceDefinitions
+      .flatMap((x) => x.datasets)
+      .find((d) => d.id === a.id)!;
+    expect(ds2.description).toBe('Parents');
+    expect(ds2.fields[0]!.description).toBe('Profit center number');
+    const old = ok(deserializeProject(serializeProject(s.project)));
+    expect(old.sourceDefinitions[0]!.datasets[0]!.description).toBeUndefined();
   });
 });

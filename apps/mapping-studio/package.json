@@ -25,7 +25,6 @@
     "react-dom": "19.3.1",
     "@mms/file-import": "^0.0.0",
     "@mms/mapping-core": "^0.0.0",
-    "@mms/mapping-suggest": "^0.0.0",
     "@mms/workspace-files": "^0.0.0",
     "@mms/profiler": "^0.0.0",
     "@mms/relationships": "^0.0.0",
@@ -35,6 +34,7 @@
     "@mms/test-engine": "^0.0.0",
     "@mms/transformation-engine": "^0.0.0",
     "@mms/file-export": "^0.0.0",
-    "@mms/local-run": "^0.0.0"
+    "@mms/local-run": "^0.0.0",
+    "@mms/ai-kit": "^0.0.0"
   }
 }

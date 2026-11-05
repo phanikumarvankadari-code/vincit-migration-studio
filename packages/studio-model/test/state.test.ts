@@ -4,6 +4,7 @@ import {
   validateProject,
   serializeProject,
   deserializeProject,
+  targetDateFormat,
 } from '@mms/mapping-core';
 import { autoImportTarget, pruneDangling } from '../src/index.js';
 import {
@@ -285,5 +286,75 @@ describe('studio state: target and structure settings', () => {
     const back = deserializeProject(serializeProject(s.project));
     expect(back.ok && back.value).toEqual(s.project);
     expect(pruneDangling(s.project)).toEqual(s.project);
+  });
+
+  it('a target date format is kept per field and per structure, survives a target reload, and can be removed', () => {
+    let s = withTarget();
+    const [pc] = s.project.targetDefinition!.structures;
+    const f = pc!.fields[0]!;
+    s = apply(s, {
+      type: 'structureSettings',
+      structureId: pc!.id,
+      generation: null,
+      parent: null,
+      dateFormat: 'yyyy-MM-dd',
+      at: at(),
+    });
+    s = apply(s, {
+      type: 'targetFieldFormat',
+      structureId: pc!.id,
+      fieldId: f.id,
+      dateFormat: 'dd.MM.yyyy',
+      at: at(),
+    });
+    const read = () => s.project.targetDefinition!.structures[0]!;
+    expect(read().dateFormat).toBe('yyyy-MM-dd');
+    expect(targetDateFormat(read(), read().fields[0]!)).toBe('dd.MM.yyyy');
+    expect(targetDateFormat(read(), read().fields[1]!)).toBe('yyyy-MM-dd');
+    expect(validateProject(s.project)).toEqual([]);
+
+    const again = ok(autoImportTarget(targetFile(), 'Profit Center')).target;
+    s = apply(s, { type: 'targetLoaded', target: again, at: at() });
+    expect(read().dateFormat).toBe('yyyy-MM-dd');
+    expect(read().fields[0]!.dateFormat).toBe('dd.MM.yyyy');
+
+    s = apply(s, {
+      type: 'targetFieldFormat',
+      structureId: pc!.id,
+      fieldId: f.id,
+      dateFormat: null,
+      at: at(),
+    });
+    s = apply(s, {
+      type: 'structureSettings',
+      structureId: pc!.id,
+      generation: null,
+      parent: null,
+      dateFormat: null,
+      at: at(),
+    });
+    expect(read()).not.toHaveProperty('dateFormat');
+    expect(read().fields[0]).not.toHaveProperty('dateFormat');
+  });
+
+  it('structure settings saved without a date format leave the format alone', () => {
+    let s = withTarget();
+    const pc = s.project.targetDefinition!.structures[0]!;
+    s = apply(s, {
+      type: 'structureSettings',
+      structureId: pc.id,
+      generation: null,
+      parent: null,
+      dateFormat: 'yyyyMMdd',
+      at: at(),
+    });
+    s = apply(s, {
+      type: 'structureSettings',
+      structureId: pc.id,
+      generation: null,
+      parent: null,
+      at: at(),
+    });
+    expect(s.project.targetDefinition!.structures[0]!.dateFormat).toBe('yyyyMMdd');
   });
 });

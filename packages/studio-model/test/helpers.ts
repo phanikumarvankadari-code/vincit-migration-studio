@@ -27,6 +27,11 @@ export const targetFile = () => ({
   content: fixtureBytes('target/data_pc.XLSX'),
 });
 
+export const templateFile = () => ({
+  name: 'data_pc_template.xlsx',
+  content: fixtureBytes('target/data_pc_template.xlsx'),
+});
+
 export const newState = (): StudioState =>
   createStudioState({
     id: 'p1',
@@ -49,4 +54,9 @@ export const smallSources = (): { cepc: ImportedSource; bukrs: ImportedSource } 
     'CEPC_BUKRS',
     ['Profit Center,Company Code', 'P100,FI01', 'P100,FI02', 'P300,NO01'].join('\n'),
   ),
+});
+
+export const fixedAssetTemplateFile = () => ({
+  name: 'fixed_asset_template.xml',
+  content: fixtureBytes('../fixed-asset/target/fixed_asset_template.xml'),
 });

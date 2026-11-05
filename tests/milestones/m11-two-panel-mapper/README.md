@@ -1,5 +1,7 @@
 # M11 — Two-panel mapper and mapping suggestions (SPEC-031)
 
+> **Removed (branch `milestone/remove-suggestions`).** Mapping and structure suggestions, the AI provider and the pairing step were taken out to redesign them. The last version that has them is the tip of `main` before this branch (commit `78677c0`). What stays: the two-panel mapper tests in `apps/mapping-studio/e2e/visual-mapper.spec.ts`.
+
 Replaces the node-graph Visual Mapper with a mapper in the style of SAP CPI message mapping, and adds system suggestions.
 
 | Case | Proves |

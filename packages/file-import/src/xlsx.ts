@@ -252,15 +252,37 @@ function readSheet(
 
 const hasValue = (m: Map<number, SourceValue>): boolean => [...m.values()].some((v) => v !== null);
 
+/** What the importers need from a sheet: its cells by worksheet row and column. */
+export interface SheetGrid {
+  rows: Map<number, Map<number, SourceValue>>;
+  dateColumns: Set<number>;
+  diagnostics: Diagnostic[];
+}
+
 /** Input is the raw workbook bytes. The importer reads no files and uses no Node or DOM APIs. */
 export function importXlsx(bytes: Uint8Array, options: XlsxImportOptions): Result<ImportedSource> {
   const read = readWorkbook(bytes);
   if (!read.ok) return read;
   const wb = read.value;
+  const shared = readSharedStrings(wb.files);
+  const isDate = readDateStyles(wb.files);
+  const paths = new Map(wb.sheets.map((s) => [s.name, s.path]));
+  return importGrids(
+    wb.sheets.map(({ name, hidden }) => ({ name, hidden })),
+    (sheet) => readSheet(wb, paths.get(sheet.name)!, shared, isDate),
+    options,
+  );
+}
 
+/** Turns the grids of the chosen sheets into a source. Shared by every workbook format. */
+export function importGrids(
+  sheets: readonly SheetInfo[],
+  gridOf: (sheet: SheetInfo) => SheetGrid,
+  options: XlsxImportOptions,
+): Result<ImportedSource> {
   const wanted = options.sheets;
   if (wanted) {
-    const missing = wanted.filter((n) => !wb.sheets.some((s) => s.name === n));
+    const missing = wanted.filter((n) => !sheets.some((s) => s.name === n));
     if (missing.length > 0) {
       return {
         ok: false,
@@ -268,7 +290,7 @@ export function importXlsx(bytes: Uint8Array, options: XlsxImportOptions): Resul
       };
     }
   }
-  const selected = wb.sheets.filter((s) => (wanted ? wanted.includes(s.name) : !s.hidden));
+  const selected = sheets.filter((s) => (wanted ? wanted.includes(s.name) : !s.hidden));
   if (selected.length === 0) {
     return {
       ok: false,
@@ -276,15 +298,13 @@ export function importXlsx(bytes: Uint8Array, options: XlsxImportOptions): Resul
     };
   }
 
-  const shared = readSharedStrings(wb.files);
-  const isDate = readDateStyles(wb.files);
   const ids = assignDatasetIds(selected.map((s) => s.name));
   const diagnostics: Diagnostic[] = [];
   const datasets = [];
 
   for (const [i, sheet] of selected.entries()) {
     const datasetId = ids[i]!;
-    const grid = readSheet(wb, sheet.path, shared, isDate);
+    const grid = gridOf(sheet);
     const tag = (d: Diagnostic): Diagnostic => ({ ...d, datasetId: datasetId as never });
     diagnostics.push(...grid.diagnostics.map(tag));
 

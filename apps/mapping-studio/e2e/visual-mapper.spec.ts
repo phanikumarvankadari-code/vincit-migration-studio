@@ -1,13 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import {
-  addProfitCenterSources,
-  goToStage,
-  loadTarget,
-  openApp,
-  openEditor,
-  setUpSmallMapping,
-  status,
-} from './helpers';
+import { openEditor, setUpSmallMapping, status } from './helpers';
 
 const node = (page: Page, id: string) => page.locator(`[data-id="${id}"]`);
 const src = (page: Page, n: number) => page.getByTestId(`src-f-CEPC-${n}`); // 1 Profit Center, 2 Valid To, 3 Valid From, 4 Country
@@ -169,6 +161,38 @@ test.describe('Two-panel mapper (SPEC-031)', () => {
     await expect(src(page, 4)).toBeVisible();
   });
 
+  test('Expand all and Collapse all open and close every source table; mapped lines stay', async ({
+    page,
+  }) => {
+    await setUpSmallMapping(page);
+    await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
+    await openVisual(page);
+    const bukrsField = page
+      .getByTestId('source-pane')
+      .locator('[data-testid^="src-f-CEPC_BUKRS"]')
+      .first();
+    await expect(src(page, 1)).toBeVisible();
+    await page.getByTestId('sources-collapse-all').click();
+    await expect(src(page, 1)).toHaveCount(0);
+    await expect(bukrsField).toHaveCount(0);
+    await expect(page.getByTestId('dataset-group-CEPC')).toBeVisible(); // only the table rows are left
+    await expect(page.getByTestId('dataset-group-CEPC_BUKRS')).toBeVisible();
+    await expect(page.getByTestId('dataset-group-CEPC')).toHaveAttribute('aria-expanded', 'false');
+    await expect(link(page, 4)).toHaveCount(1); // the mapping line is kept
+    await page.getByTestId('sources-expand-all').click();
+    await expect(src(page, 1)).toBeVisible();
+    await expect(bukrsField).toBeVisible();
+    await expect(page.getByTestId('dataset-group-CEPC_BUKRS')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    // a table collapsed by hand is opened again by Expand all
+    await page.getByTestId('dataset-group-CEPC').click();
+    await expect(src(page, 1)).toHaveCount(0);
+    await page.getByTestId('sources-expand-all').click();
+    await expect(src(page, 1)).toBeVisible();
+  });
+
   test('target fields can be searched and filtered to the unmapped ones', async ({ page }) => {
     await setUpSmallMapping(page);
     await mapDirect(page, 'Profit Center', 'Language', 'CEPC.Country');
@@ -195,69 +219,6 @@ test.describe('Two-panel mapper (SPEC-031)', () => {
     await expect(page.getByTestId('tgt-tf-Company-Codes-2')).toContainText('Mapped');
     await expect(tgt(page, 4)).toHaveCount(0);
     await expect(page.getByTestId('link-tf-Company-Codes-2')).toHaveCount(1);
-  });
-
-  test('Suggest mappings proposes sources with reasons; Accept maps, Reject drops, nothing is automatic', async ({
-    page,
-  }) => {
-    await setUpSmallMapping(page);
-    await openVisual(page);
-    await page.getByRole('button', { name: 'Suggest mappings' }).click();
-    const list = page.getByTestId('suggestions');
-    // Profit Center and Valid From have a source with the same name; Region and Language have none
-    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toContainText(
-      'CEPC.Profit Center',
-    );
-    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toContainText('same name');
-    await expect(page.getByTestId('suggestion-tf-Profit-Center-2')).toContainText(
-      'CEPC.Valid From',
-    );
-    await expect(page.locator('[data-testid^="suggestion-tf-Profit-Center-"]')).toHaveCount(2);
-    await expect(page.getByTestId('suggest-tf-Profit-Center-1')).toHaveCount(1); // dashed line
-    await expect(page.getByTestId('score-tf-Profit-Center-1')).toBeVisible();
-    // not mapped yet
-    await expect(tgt(page, 1)).toContainText('Unmapped');
-
-    await page
-      .getByTestId('suggestion-tf-Profit-Center-1')
-      .getByRole('button', { name: 'Accept' })
-      .click();
-    await expect(page.getByTestId('graph-message')).toHaveText('1 mapping created.');
-    await expect(tgt(page, 1)).toContainText('Mapped');
-    await expect(link(page, 1)).toHaveCount(1);
-    await expect(page.getByTestId('suggestion-tf-Profit-Center-1')).toHaveCount(0);
-
-    await page
-      .getByTestId('suggestion-tf-Profit-Center-2')
-      .getByRole('button', { name: 'Reject' })
-      .click();
-    await expect(page.getByTestId('suggestion-tf-Profit-Center-2')).toHaveCount(0);
-    await expect(tgt(page, 2)).toContainText('Unmapped');
-    await expect(list).toContainText('No open suggestions');
-  });
-
-  test('on the real Profit Center files, Accept all applies only the strong suggestions', async ({
-    page,
-  }) => {
-    await openApp(page);
-    await addProfitCenterSources(page, true);
-    await loadTarget(page);
-    await goToStage(page, 'map');
-    await openVisual(page);
-    await page.getByRole('button', { name: 'Suggest mappings' }).click();
-    const rows = page.locator('[data-testid^="suggestion-"]');
-    const before = await rows.count();
-    expect(before).toBeGreaterThan(15);
-    // key fields match on name, data type and key: strong. "Printer" only shares words with "Printer name": weaker.
-    await expect(rows.filter({ hasText: 'Profit Center.Printer' })).toHaveCount(0);
-    await page.getByRole('button', { name: /Accept all High/ }).click();
-    await expect(page.getByTestId('graph-message')).toContainText(/mappings? created/);
-    const after = await rows.count();
-    expect(after).toBeGreaterThan(0); // the weaker ones are still waiting for a decision
-    expect(after).toBeLessThan(before);
-    await expect(rows.filter({ hasText: 'the names share words' }).first()).toBeVisible();
-    // the weak ones were not applied, the strong ones were
-    await expect(page.getByTestId('stage-map-summary')).toHaveText(/^[1-9]\d* of 39 fields mapped/);
   });
 
   test('the joins picture shows datasets and joins; a join can be confirmed from it', async ({
