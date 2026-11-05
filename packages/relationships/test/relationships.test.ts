@@ -398,4 +398,79 @@ describe('relationship suggestions (humans confirm)', () => {
     expect(suggestRelationships(data)).toEqual(suggestRelationships(data));
     expect(JSON.stringify(data)).toBe(before);
   });
+
+  it('a column that only shares a name (a year that means something else in each table) is left out of the key', () => {
+    const master = table(
+      'ANLA',
+      ['BUKRS', 'ANLN1', 'ANLN2', 'ZUJHR'],
+      [
+        ['1010', '0001', '0000', '2019'],
+        ['1010', '0002', '0001', '2020'],
+        ['1010', '0003', '0000', '2021'],
+        ['1710', '0004', '0001', '2019'],
+      ],
+    );
+    const values = table(
+      'ANLC',
+      ['BUKRS', 'ANLN1', 'ANLN2', 'ZUJHR'],
+      [
+        ['1010', '0001', '0000', '2020'],
+        ['1010', '0001', '0000', '2020'],
+        ['1010', '0002', '0001', '2021'],
+        ['1710', '0004', '0001', '2020'],
+      ],
+    );
+    const [s] = suggestRelationships([master, values]);
+    expect(s!.relationship.keys.map((k) => k.leftFieldId)).toEqual([
+      'ANLA.BUKRS',
+      'ANLA.ANLN1',
+      'ANLA.ANLN2',
+    ]);
+    expect(s!.evidence.join(' ')).toContain('left out "ZUJHR"');
+    expect(s!.diagnostics.map((d) => d.code)).not.toContain('RELATIONSHIP_NO_MATCHING_VALUES');
+  });
+
+  it('keys that already match are not changed, even when one part overlaps little', () => {
+    const a = table(
+      'A',
+      ['id', 'yr'],
+      [
+        ['1', '2019'],
+        ['2', '2020'],
+        ['3', '2019'],
+      ],
+    );
+    const b = table(
+      'B',
+      ['id', 'yr'],
+      [
+        ['1', '2019'],
+        ['2', '2020'],
+        ['4', '2019'],
+      ],
+    );
+    const [s] = suggestRelationships([a, b]);
+    expect(s!.relationship.keys).toHaveLength(2);
+  });
+
+  it('a column of amounts is not used as a key part, even when the same values appear in both tables', () => {
+    const a = table(
+      'A',
+      ['id', 'amount'],
+      [
+        ['1', '1000.00'],
+        ['2', '250.50'],
+      ],
+    );
+    const b = table(
+      'B',
+      ['id', 'amount'],
+      [
+        ['1', '1000.00'],
+        ['2', '250.50'],
+      ],
+    );
+    const [s] = suggestRelationships([a, b]);
+    expect(s!.relationship.keys.map((k) => k.leftFieldId)).toEqual(['A.id']);
+  });
 });

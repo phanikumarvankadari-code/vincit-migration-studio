@@ -2,14 +2,15 @@ import type { Diagnostic, Result, SourceLocation, SourceValue } from '@mms/mappi
 import {
   assignDatasetIds,
   buildSource,
+  datasetNameFromFile,
   diag,
-  stripExtension,
   type ImportedSource,
 } from './common.js';
 
 export interface CsvImportOptions {
   /** File name, used for the source name and default dataset name. */
   fileName: string;
+  /** The field separator. Default: found from the header line (tab, semicolon, pipe or comma). */
   delimiter?: string;
   datasetName?: string;
   location?: SourceLocation;
@@ -197,15 +198,35 @@ export function fitRows(
   return { rows: out, diagnostics };
 }
 
+/**
+ * Finds the separator from the header line: the one of tab, semicolon, pipe and comma that occurs most often outside
+ * quotes. SAP table dumps are usually tab separated. A tie or a header with none of them gives a comma.
+ */
+export function detectDelimiter(text: string): string {
+  const start = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  let end = start;
+  while (end < text.length && text[end] !== '\n' && text[end] !== '\r') end++;
+  const counts: Record<string, number> = { '\t': 0, ';': 0, '|': 0, ',': 0 };
+  let quoted = false;
+  for (let i = start; i < end; i++) {
+    const ch = text[i]!;
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && ch in counts) counts[ch]!++;
+  }
+  let best = ',';
+  for (const d of ['\t', ';', '|', ',']) if (counts[d]! > counts[best]!) best = d;
+  return best;
+}
+
 /** Input is decoded text (UTF-8). The importer reads no files and uses no Node or DOM APIs. */
 export function importCsv(text: string, options: CsvImportOptions): Result<ImportedSource> {
-  const parsed = parseCsvText(text, options.delimiter ?? ',');
+  const parsed = parseCsvText(text, options.delimiter ?? detectDelimiter(text));
   if (!parsed.ok)
     return fail(parsed.code, parsed.message, { technicalDetails: `line ${parsed.line}` });
   const [headerRow, ...dataRows] = parsed.rows;
   if (!headerRow) return fail('CSV_EMPTY', 'The file contains no header row.');
 
-  const name = options.datasetName ?? stripExtension(options.fileName);
+  const name = options.datasetName ?? datasetNameFromFile(options.fileName);
   const datasetId = assignDatasetIds([name])[0]!;
   const { headers, diagnostics } = normalizeHeaders(headerRow.cells, 'CSV', datasetId);
   const fitted = fitRows(dataRows, headers.length, 'CSV', datasetId);

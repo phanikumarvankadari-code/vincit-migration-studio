@@ -1,5 +1,11 @@
 export * from './common.js';
-export { importCsv, parseCsvText, type CsvImportOptions, type RawCsvRow } from './csv.js';
+export {
+  detectDelimiter,
+  importCsv,
+  parseCsvText,
+  type CsvImportOptions,
+  type RawCsvRow,
+} from './csv.js';
 export {
   importXlsx,
   listXlsxSheets,
