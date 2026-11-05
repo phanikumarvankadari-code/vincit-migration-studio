@@ -31,8 +31,13 @@ export type TargetField = z.infer<typeof TargetFieldSchema>;
 
 /** Which source dataset drives the rows of a structure. Semantics are finalised in SPEC-013. */
 export const RowGenerationSchema = z.strictObject({
+  /** The main source table of the structure. */
   driverDatasetId: SourceDatasetIdSchema,
   viaRelationshipIds: z.array(RelationshipIdSchema).optional(),
+  /** Other tables that may feed fields of the structure. Informational; a field from one needs a confirmed join. */
+  helperDatasetIds: z.array(SourceDatasetIdSchema).optional(),
+  /** Whether the pairing of table and structure still waits for the user. Absent means confirmed. */
+  status: z.enum(['suggested', 'confirmed']).optional(),
 });
 export type RowGeneration = z.infer<typeof RowGenerationSchema>;
 

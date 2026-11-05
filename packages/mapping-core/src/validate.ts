@@ -167,6 +167,9 @@ export function validateModel(parts: ModelParts): Diagnostic[] {
     const p = `targetDefinition.structures[${i}]`;
     if (s.generation) {
       checkDatasetField(s.generation.driverDatasetId, undefined, `${p}.generation.driverDatasetId`);
+      s.generation.helperDatasetIds?.forEach((did, j) => {
+        checkDatasetField(did, undefined, `${p}.generation.helperDatasetIds[${j}]`);
+      });
       s.generation.viaRelationshipIds?.forEach((rid, j) => {
         if (!relationshipIds.has(rid)) {
           add(

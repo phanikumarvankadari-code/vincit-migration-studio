@@ -191,7 +191,9 @@ export function SourcesStage() {
                       <AccordionItem key={ds.id} value={ds.id}>
                         <AccordionHeader>
                           <span data-testid={`dataset-${ds.name}`}>
-                            {ds.name} — {profile ? `${profile.rowCount} rows` : 'data not loaded'},{' '}
+                            {ds.name}
+                            {ds.description ? ` (${ds.description})` : ''} —{' '}
+                            {profile ? `${profile.rowCount} rows` : 'data not loaded'},{' '}
                             {ds.fields.length} fields
                           </span>
                         </AccordionHeader>
@@ -201,6 +203,7 @@ export function SourcesStage() {
                               <thead>
                                 <tr>
                                   <th>Field</th>
+                                  {ds.fields.some((f) => f.description) && <th>Description</th>}
                                   <th>Technical name</th>
                                   <th>Type</th>
                                   <th>Key</th>
@@ -216,6 +219,9 @@ export function SourcesStage() {
                                   return (
                                     <tr key={f.id}>
                                       <td>{f.displayName}</td>
+                                      {ds.fields.some((x) => x.description) && (
+                                        <td>{f.description ?? ''}</td>
+                                      )}
                                       <td>{f.technicalName ?? ''}</td>
                                       <td>
                                         {f.datatype === 'unknown'

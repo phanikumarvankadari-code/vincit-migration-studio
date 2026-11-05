@@ -9,6 +9,7 @@ import {
   type RowGeneration,
   type SourceRows,
   type TargetDefinition,
+  type SourceDefinition,
 } from '@mms/mapping-core';
 import { applyFieldDictionary, type FieldDictionary, type ImportedSource } from '@mms/file-import';
 import { suggestRelationships, type DatasetData } from '@mms/relationships';
@@ -215,6 +216,8 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
         enriched = applied.source;
         dictDiagnostics = applied.diagnostics;
       }
+      // Reading the same file again keeps the descriptions that were added to its tables and fields.
+      if (old) enriched = carryDescriptions(enriched, old);
       const data: Record<string, SourceRows> = Object.fromEntries(
         Object.entries(state.data).filter(([id]) => !oldIds.has(id)),
       );
@@ -521,4 +524,27 @@ export function datasetsWithoutData(
       .filter((d) => !state.data[d.id])
       .map((d) => ({ datasetId: d.id as string, name: d.name, sourceName: s.name })),
   );
+}
+
+/** Copies table and field descriptions from an earlier version of a source onto the new one, matched by ID. */
+function carryDescriptions(next: SourceDefinition, old: SourceDefinition): SourceDefinition {
+  const oldDatasets = new Map(old.datasets.map((d) => [d.id as string, d]));
+  return {
+    ...next,
+    datasets: next.datasets.map((d) => {
+      const before = oldDatasets.get(d.id);
+      if (!before) return d;
+      const fields = new Map(before.fields.map((f) => [f.id as string, f.description]));
+      return {
+        ...d,
+        ...(d.description === undefined && before.description
+          ? { description: before.description }
+          : {}),
+        fields: d.fields.map((f) => {
+          const text = fields.get(f.id);
+          return f.description === undefined && text ? { ...f, description: text } : f;
+        }),
+      };
+    }),
+  };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { serializeProject } from '@mms/mapping-core';
+import { applyDescriptions, applyPairings } from '@mms/studio-model';
 import { buildCatalog, buildKit, importAiResult, reportToText } from '../src/index.js';
 import { setup, sourceField, targetField } from './helpers.js';
 
@@ -25,7 +26,7 @@ describe('AI mapping kit', () => {
     );
   });
 
-  it('lists every target and source field with its ID, and marks date fields as manual', () => {
+  it('lists every target field and the source fields that have data, by name and without IDs', () => {
     const { project, data } = setup();
     const c = buildCatalog(project, data);
     expect(c.structures).toHaveLength(11);
@@ -38,7 +39,52 @@ describe('AI mapping kit', () => {
     expect(c.datasets[0]!.name).toBe('ANLA');
     expect(c.datasets[0]!.rows).toBe(4);
     const md = buildKit(project, data).find((f) => f.name === 'catalog.md')!.content;
-    for (const s of c.structures) for (const f of s.fields) expect(md).toContain(f.id);
+    for (const s of c.structures)
+      for (const f of s.fields) expect(md).toContain(f.technicalName ?? f.name);
+    expect(md).not.toContain('tf-General-1'); // no IDs: the answer uses names
+    expect(md).not.toContain('f-ANLA-1');
+    expect(md).toContain('### ANLA');
+    expect(md).toContain('| TXT50 |');
+  });
+
+  it('describes the wizard once: interview, table descriptions, pairing, fields, summary', () => {
+    const { project, data } = setup();
+    const prompt = buildKit(project, data)[0]!.content;
+    for (const step of [
+      'Step 0 - Interview',
+      'Step 1 - What the source tables are',
+      'Step 2 - Which table feeds which structure',
+      'Step 3 - Fields, one structure at a time',
+      'Step 4 - Summary',
+    ])
+      expect(prompt).toContain(step);
+    expect(prompt).toContain('ANLA - 4 rows');
+    expect(prompt).toContain('tableDescriptions');
+    expect(prompt).toContain('pairings');
+    expect(prompt).toContain('fieldDescriptions');
+  });
+
+  it('shows what is known: table and field descriptions, and the main table of a structure', () => {
+    const { project, data } = setup();
+    const t = targetField(project, 'General', 'ANLN1');
+    const s = sourceField(project, 'TXT50');
+    const withText = applyDescriptions(
+      project,
+      {
+        tables: [{ datasetId: s.datasetId, description: 'Asset master record segment' }],
+        fields: [{ datasetId: s.datasetId, fieldId: s.fieldId, description: 'Asset description' }],
+      },
+      AT,
+    );
+    const paired = applyPairings(
+      withText,
+      [{ structureId: t.structureId, driverDatasetId: s.datasetId, status: 'suggested' }],
+      AT,
+    );
+    const md = buildKit(paired, data).find((f) => f.name === 'catalog.md')!.content;
+    expect(md).toContain('### ANLA - Asset master record segment');
+    expect(md).toContain('| Asset description |');
+    expect(md).toContain('Main source table: ANLA (suggested, not confirmed)');
   });
 
   it('never includes a cell value, except the codes of code-like columns', () => {
@@ -54,6 +100,7 @@ describe('AI mapping kit', () => {
       '99.99',
       '000000200001',
       '20190101',
+      '20171017',
     ])
       expect(all).not.toContain(secret);
     const asset = buildCatalog(project, data).datasets[0]!.fields;
@@ -64,15 +111,20 @@ describe('AI mapping kit', () => {
     expect(asset.find((f) => f.name === 'TXT50')!.codeValues).toBeUndefined(); // a name, all different
     expect(asset.find((f) => f.name === 'AMT')!.codeValues).toBeUndefined(); // amounts
     expect(asset.find((f) => f.name === 'ANLN1')!.codeValues).toBeUndefined(); // unique numbers
+    expect(asset.find((f) => f.name === 'ABGDT')!.codeValues).toBeUndefined(); // SAP dates stored as text
     expect(asset.find((f) => f.name === 'ANLN1')!.keyCandidate).toBe(true);
   });
 
-  it('the example uses real IDs of the project', () => {
+  it('the examples use real names of the project', () => {
     const { project, data } = setup();
     const ex = JSON.parse(buildKit(project, data).find((f) => f.name === 'examples.json')!.content);
-    const ids = JSON.stringify(project);
-    expect(ids).toContain(ex.mappings[0].targetFieldId);
-    expect(ids).toContain(ex.mappings[0].sourceReferences[0].fieldId);
+    expect(ex.step1_tableDescriptions.tableDescriptions[0].table).toBe('ANLA');
+    expect(ex.step2_pairings.pairings[0].structure).toBe('General');
+    expect(ex.step3_mappings.mappings[0]).toMatchObject({
+      structure: 'General',
+      table: 'ANLA',
+      type: 'direct',
+    });
   });
 });
 
@@ -242,5 +294,167 @@ describe('importing what an AI answered', () => {
       AT,
     );
     expect(serializeProject(project)).toBe(before);
+  });
+});
+
+describe('importing the steps of the wizard', () => {
+  it('step 1: adds table descriptions, matching the table by name', () => {
+    const { project } = setup();
+    const { project: next, report } = importAiResult(
+      project,
+      JSON.stringify({
+        tableDescriptions: [
+          { table: 'anla', description: 'Asset master record segment' },
+          { table: 'NOPE', description: 'x' },
+          { table: 'ANLA', description: '' },
+        ],
+      }),
+      AT,
+    );
+    expect(report.tableDescriptions).toBe(1);
+    expect(report.skipped.map((s) => s.code)).toEqual(['AI_UNKNOWN_TABLE', 'AI_INVALID_ITEM']);
+    expect(next.sourceDefinitions[0]!.datasets[0]!.description).toBe('Asset master record segment');
+  });
+
+  it('step 2: pairs structures with a main table and extras as "suggested"; skips unknown names', () => {
+    const { project } = setup();
+    const { project: next, report } = importAiResult(
+      project,
+      JSON.stringify({
+        pairings: [
+          {
+            structure: 'General',
+            mainTable: 'ANLA',
+            extraTables: ['ANLA', 'T999'],
+            confidence: 'certain',
+            reason: 'master',
+          },
+          { structure: 'Origin', mainTable: 'ANLA' },
+          { structure: 'Nope', mainTable: 'ANLA' },
+          { structure: 'Inventory', mainTable: 'T999' },
+          { structure: 'General', mainTable: 'ANLA' },
+        ],
+      }),
+      AT,
+    );
+    expect(report.pairings).toEqual([
+      { structure: 'General', mainTable: 'ANLA', extraTables: [] },
+      { structure: 'Origin', mainTable: 'ANLA', extraTables: [] },
+    ]);
+    expect(report.skipped.map((s) => s.code)).toEqual([
+      'AI_UNKNOWN_TABLE', // the extra table
+      'AI_UNKNOWN_STRUCTURE',
+      'AI_UNKNOWN_TABLE',
+      'AI_DUPLICATE_TARGET',
+    ]);
+    const general = next.targetDefinition!.structures.find((s) => s.name === 'General')!;
+    expect(general.generation).toMatchObject({ status: 'suggested' });
+    expect(general.generation!.driverDatasetId).toBe(project.sourceDefinitions[0]!.datasets[0]!.id);
+    expect(
+      next.targetDefinition!.structures.find((s) => s.name === 'Inventory')!.generation,
+    ).toBeUndefined();
+  });
+
+  it('step 3: adds field descriptions, flat or grouped by table, and reports unknown and ambiguous names', () => {
+    const { project } = setup();
+    const { project: next, report } = importAiResult(
+      project,
+      JSON.stringify({
+        fieldDescriptions: [
+          { table: 'ANLA', field: 'ANLN1', description: 'Main asset number' },
+          {
+            table: 'ANLA',
+            fields: [
+              { field: 'TXT50', description: 'Asset description' },
+              { field: 'XXXX', description: 'x' },
+            ],
+          },
+        ],
+      }),
+      AT,
+    );
+    expect(report.fieldDescriptions).toBe(2);
+    expect(report.skipped.map((s) => s.code)).toEqual(['AI_UNKNOWN_SOURCE']);
+    const fields = next.sourceDefinitions[0]!.datasets[0]!.fields;
+    expect(fields.find((f) => f.displayName === 'ANLN1')!.description).toBe('Main asset number');
+    expect(fields.find((f) => f.displayName === 'TXT50')!.description).toBe('Asset description');
+  });
+
+  it('step 3: mappings by names (structure, target, table, source), and a lookup by its name', () => {
+    const { project } = setup();
+    const { project: next, report } = importAiResult(
+      project,
+      JSON.stringify({
+        lookups: [{ id: 'lk-class', name: 'Asset class', entries: [{ key: 'A', value: '1000' }] }],
+        mappings: [
+          {
+            structure: 'General',
+            target: 'ANLN1',
+            table: 'ANLA',
+            source: 'ANLN1',
+            type: 'direct',
+            confidence: 'certain',
+          },
+          {
+            structure: 'General',
+            target: 'Asset Class',
+            table: 'ANLA',
+            source: 'ASTAT',
+            type: 'lookup',
+            lookup: 'Asset class',
+          },
+          { structure: 'General', target: 'ANLN2', table: 'ANLA', source: 'NOPE', type: 'direct' },
+          { structure: 'General', target: 'NOPE', table: 'ANLA', source: 'ANLN1', type: 'direct' },
+          { structure: 'Nope', target: 'ANLN1', table: 'ANLA', source: 'ANLN1', type: 'direct' },
+          { structure: 'General', target: 'ANLN2', table: 'T999', source: 'ANLN1', type: 'direct' },
+        ],
+      }),
+      AT,
+    );
+    expect(report.imported.map((i) => [i.field, i.source, i.mappingType])).toEqual([
+      ['Ext./Leg. Asset Number', 'ANLA.ANLN1', 'direct'],
+      ['Asset Class', 'ANLA.ASTAT', 'lookup'],
+    ]);
+    expect(report.skipped.map((s) => s.code)).toEqual([
+      'AI_UNKNOWN_SOURCE',
+      'AI_UNKNOWN_TARGET',
+      'AI_UNKNOWN_STRUCTURE',
+      'AI_UNKNOWN_TABLE',
+    ]);
+    const m = next.mappingDefinition.mappings.find((x) => x.mappingType === 'lookup')!;
+    expect(m).toMatchObject({ status: 'needsReview', lookup: { lookupId: 'lk-class' } });
+  });
+
+  it('takes several blocks of one conversation in any order: pairing, descriptions, mappings', () => {
+    const { project } = setup();
+    const block = (o: unknown) => `text\n\`\`\`json\n${JSON.stringify(o)}\n\`\`\`\n`;
+    const answer =
+      block({
+        mappings: [
+          { structure: 'General', target: 'ANLN1', table: 'ANLA', source: 'ANLN1', type: 'direct' },
+        ],
+      }) +
+      block({ pairings: [{ structure: 'General', mainTable: 'ANLA' }] }) +
+      block({ tableDescriptions: [{ table: 'ANLA', description: 'Assets' }] });
+    const { report } = importAiResult(project, answer, AT);
+    expect(report.tableDescriptions).toBe(1);
+    expect(report.pairings).toHaveLength(1);
+    expect(report.imported).toHaveLength(1);
+    expect(report.skipped).toEqual([]);
+  });
+
+  it('the report text names what was imported', () => {
+    const { project } = setup();
+    const { report } = importAiResult(
+      project,
+      JSON.stringify({
+        tableDescriptions: [{ table: 'ANLA', description: 'Assets' }],
+        pairings: [{ structure: 'General', mainTable: 'ANLA' }],
+      }),
+      AT,
+    );
+    expect(reportToText(report)).toContain(
+      'Imported 1 table description(s), 1 pairing(s), 0 mapping(s).',
+    );
   });
 });

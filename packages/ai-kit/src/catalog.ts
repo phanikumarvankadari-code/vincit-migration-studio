@@ -16,6 +16,7 @@ export interface CatalogSourceField {
   id: string;
   name: string;
   technicalName?: string;
+  description?: string;
   datatype: string;
   maxLength?: number;
   filledPercent?: number;
@@ -29,6 +30,7 @@ export interface CatalogSourceField {
 export interface CatalogDataset {
   id: string;
   name: string;
+  description?: string;
   rows: number | null;
   fields: CatalogSourceField[];
 }
@@ -54,6 +56,8 @@ export interface CatalogStructure {
   /** The tab of the target workbook this structure is written to. */
   sheet?: string;
   driverDatasetId?: string;
+  /** The pairing with the main table still waits for the user. */
+  pairingSuggested?: boolean;
   fields: CatalogTargetField[];
 }
 
@@ -74,6 +78,7 @@ export interface Catalog {
 }
 
 const CODE = /^\S+$/;
+const SAP_DATE = /^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$|^\d{4}-\d{2}-\d{2}$/;
 
 function codeValues(
   profile: FieldProfile,
@@ -90,6 +95,9 @@ function codeValues(
   const counts = new Map<string, number>();
   for (const v of column) if (v !== null && v !== '') counts.set(v, (counts.get(v) ?? 0) + 1);
   if ([...counts.keys()].some((v) => !CODE.test(v) || v.length > o.maxCodeLength)) return undefined;
+  // SAP stores dates as text (20190101, or 00000000 for none). They are dates, not codes, whatever their type says.
+  const dates = [...counts.keys()].filter((v) => SAP_DATE.test(v) || v === '00000000').length;
+  if (dates / counts.size >= 0.5) return undefined;
   return [...counts.entries()]
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
@@ -119,6 +127,7 @@ export function buildCatalog(
       return {
         id: d.id,
         name: d.displayName ?? d.name,
+        ...(d.description ? { description: d.description } : {}),
         rows: profile ? profile.rowCount : null,
         fields: d.fields.map((f, col): CatalogSourceField => {
           const p = profile?.fields[col];
@@ -134,6 +143,7 @@ export function buildCatalog(
             id: f.id,
             name: f.displayName,
             ...(f.technicalName ? { technicalName: f.technicalName } : {}),
+            ...(f.description ? { description: f.description } : {}),
             datatype: p ? p.inferredDatatype : f.datatype,
             ...(p?.maxLength !== undefined ? { maxLength: p.maxLength } : {}),
             ...(p ? { filledPercent: p.fillPercentage, distinct: p.distinctCount } : {}),
@@ -152,6 +162,7 @@ export function buildCatalog(
     name: s.name,
     ...(s.templateSheet ? { sheet: s.templateSheet } : {}),
     ...(s.generation ? { driverDatasetId: s.generation.driverDatasetId } : {}),
+    ...(s.generation?.status === 'suggested' ? { pairingSuggested: true } : {}),
     fields: s.fields.map((f): CatalogTargetField => ({
       id: f.id,
       name: f.displayName,
@@ -187,53 +198,72 @@ const cell = (v: unknown): string =>
     .replace(/\|/g, '\\|')
     .replace(/\s+/g, ' ');
 
-/** The catalog as readable Markdown, for a chat AI that cannot open JSON files comfortably. */
+/** Fields with no data in the export carry no information: they are listed by name only. */
+const hasData = (f: CatalogSourceField): boolean =>
+  f.filledPercent === undefined || f.filledPercent > 0;
+
+/**
+ * The catalog as compact Markdown for a chat AI. Fields are named, not numbered: the answer refers to tables,
+ * structures and fields by name and the app finds the IDs.
+ */
 export function catalogToMarkdown(c: Catalog): string {
-  const nameOf = new Map(
-    c.datasets.flatMap((d) =>
-      d.fields.map((f) => [f.id, `${d.name}.${f.technicalName ?? f.name}`] as const),
-    ),
-  );
+  const tableName = new Map(c.datasets.map((d) => [d.id, d.name] as const));
   const lines: string[] = [`# Catalog: ${c.object}`, ''];
   lines.push('## Target structures (what is to be filled)', '');
   for (const s of c.structures) {
-    lines.push(`### ${s.name}${s.sheet ? ` (tab "${s.sheet}")` : ''}`);
-    lines.push(`Structure ID: \`${s.id}\``);
-    if (s.driverDatasetId)
-      lines.push(
-        `Rows come from: ${c.datasets.find((d) => d.id === s.driverDatasetId)?.name ?? s.driverDatasetId}`,
-      );
+    const rows = s.driverDatasetId
+      ? ` Main source table: ${tableName.get(s.driverDatasetId) ?? s.driverDatasetId}${s.pairingSuggested ? ' (suggested, not confirmed)' : ''}.`
+      : '';
     lines.push(
+      `### ${s.name}${s.sheet && s.sheet !== s.name ? ` (tab "${s.sheet}")` : ''}${rows ? ' -' : ''}${rows}`,
       '',
-      '| Field ID | Name | Technical name | Type | Length | Required | Key | Group | Set by |',
-      '|---|---|---|---|---|---|---|---|---|',
+    );
+    lines.push(
+      '| Description | Technical name | Type | Length | Required | Key | Group | Set by |',
+      '|---|---|---|---|---|---|---|---|',
     );
     for (const f of s.fields)
       lines.push(
-        `| \`${f.id}\` | ${cell(f.name)} | ${cell(f.technicalName)} | ${f.datatype} | ${f.length ?? ''} | ${f.required ? 'yes' : ''} | ${f.key ? 'yes' : ''} | ${cell(f.group)} | ${f.manual ? 'user (date)' : 'AI proposes'} |`,
+        `| ${cell(f.name)} | ${cell(f.technicalName)} | ${f.datatype} | ${f.length ?? ''} | ${f.required ? 'yes' : ''} | ${f.key ? 'yes' : ''} | ${cell(f.group)} | ${f.manual ? 'user (date)' : 'AI proposes'} |`,
       );
     lines.push('');
   }
   lines.push('## Source tables (what can be used)', '');
   for (const d of c.datasets) {
-    lines.push(`### ${d.name}`, `Dataset ID: \`${d.id}\`, rows: ${d.rows ?? 'unknown'}`, '');
+    const used = d.fields.filter(hasData);
+    const empty = d.fields.filter((f) => !hasData(f));
     lines.push(
-      '| Field ID | Name | Technical name | Type | Max length | Filled % | Distinct | Key candidate | Codes (value x count) |',
-      '|---|---|---|---|---|---|---|---|---|',
+      `### ${d.name}${d.description ? ` - ${d.description}` : ''}`,
+      `${d.rows ?? '?'} rows, ${d.fields.length} fields${empty.length > 0 ? `, ${used.length} with data` : ''}.`,
+      '',
     );
-    for (const f of d.fields)
+    const withText = used.some((f) => f.description);
+    lines.push(
+      `| Field |${withText ? ' Description |' : ''} Type | Max length | Filled % | Distinct | Key candidate | Codes (value x count) |`,
+      `|---|${withText ? '---|' : ''}---|---|---|---|---|---|`,
+    );
+    for (const f of used)
       lines.push(
-        `| \`${f.id}\` | ${cell(f.name)} | ${cell(f.technicalName)} | ${f.datatype} | ${f.maxLength ?? ''} | ${f.filledPercent ?? ''} | ${f.distinct ?? ''} | ${f.keyCandidate ? 'yes' : ''} | ${f.codeValues ? cell(f.codeValues.map((v) => `${v.value} x${v.count}`).join(', ')) : ''} |`,
+        `| ${cell(f.technicalName ?? f.name)} |${withText ? ` ${cell(f.description)} |` : ''} ${f.datatype} | ${f.maxLength ?? ''} | ${f.filledPercent === undefined ? '' : Math.round(f.filledPercent)} | ${f.distinct ?? ''} | ${f.keyCandidate ? 'yes' : ''} | ${f.codeValues ? cell(f.codeValues.map((v) => `${v.value} x${v.count}`).join(', ')) : ''} |`,
+      );
+    if (empty.length > 0)
+      lines.push(
+        '',
+        `Empty in this export: ${empty.map((f) => f.technicalName ?? f.name).join(', ')}.`,
       );
     lines.push('');
   }
-  lines.push('## Joins between the source tables', '');
-  if (c.relationships.length === 0) lines.push('None are defined yet.');
-  for (const r of c.relationships) {
-    const l = c.datasets.find((d) => d.id === r.left.datasetId)?.name ?? r.left.datasetId;
-    const rt = c.datasets.find((d) => d.id === r.right.datasetId)?.name ?? r.right.datasetId;
+  lines.push('## Joins between the source tables (optional)', '');
+  const fieldName = new Map(
+    c.datasets.flatMap((d) =>
+      d.fields.map((f) => [f.id, `${d.name}.${f.technicalName ?? f.name}`] as const),
+    ),
+  );
+  const confirmed = c.relationships.filter((r) => r.status === 'confirmed');
+  if (confirmed.length === 0) lines.push('No join is confirmed. Do not rely on any join.');
+  for (const r of confirmed) {
     lines.push(
-      `- ${l} to ${rt} on ${r.left.fieldIds.map((id, i) => `${nameOf.get(id) ?? id} = ${nameOf.get(r.right.fieldIds[i]!) ?? r.right.fieldIds[i]}`).join(', ')} (${r.cardinality}, ${r.joinType} join, ${r.status})`,
+      `- ${tableName.get(r.left.datasetId)} to ${tableName.get(r.right.datasetId)} on ${r.left.fieldIds.map((id, i) => `${fieldName.get(id)} = ${fieldName.get(r.right.fieldIds[i]!)}`).join(', ')} (${r.cardinality})`,
     );
   }
   lines.push('');

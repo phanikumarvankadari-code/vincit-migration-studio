@@ -44,7 +44,14 @@ export function AiMappingPanel() {
     const out = importAiResult(state.project, text, new Date().toISOString());
     setReport(out.report);
     setCopied(false);
-    if (out.report.imported.length > 0 || out.report.lookupsAdded.length > 0)
+    const r = out.report;
+    if (
+      r.imported.length > 0 ||
+      r.lookupsAdded.length > 0 ||
+      r.tableDescriptions > 0 ||
+      r.fieldDescriptions > 0 ||
+      r.pairings.length > 0
+    )
       send({ type: 'projectEdited', project: out.project });
   };
 
@@ -125,11 +132,7 @@ export function AiMappingPanel() {
                       <MessageBar intent={report.skipped.length > 0 ? 'warning' : 'success'}>
                         <MessageBarBody>
                           <span data-testid="ai-import-summary">
-                            Imported {report.imported.length} mapping(s)
-                            {report.lookupsAdded.length > 0
-                              ? ` and ${report.lookupsAdded.length} lookup(s)`
-                              : ''}
-                            . Skipped {report.skipped.length}.
+                            {reportToText(report).split('\n')[0]} Skipped {report.skipped.length}.
                           </span>
                         </MessageBarBody>
                       </MessageBar>

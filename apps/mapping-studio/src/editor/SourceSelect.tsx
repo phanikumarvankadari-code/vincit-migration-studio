@@ -56,10 +56,14 @@ export function SourceSelect({
           <option value="">{allowNone ? '— none —' : '— choose a source field —'}</option>
           {state.project.sourceDefinitions.flatMap((src) =>
             src.datasets.map((ds) => (
-              <optgroup key={ds.id} label={ds.name}>
+              <optgroup
+                key={ds.id}
+                label={ds.description ? `${ds.name} — ${ds.description}` : ds.name}
+              >
                 {ds.fields.map((f) => (
                   <option key={f.id} value={`${ds.id}|${f.id}`}>
                     {ds.name}.{f.displayName}
+                    {f.description ? ` — ${f.description}` : ''}
                   </option>
                 ))}
               </optgroup>

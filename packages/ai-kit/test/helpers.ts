@@ -11,11 +11,11 @@ import {
 
 /** A small asset table with a name, a code, an amount, a date and a unique number. */
 export const ASSETS = [
-  'ANLN1\tTXT50\tASTAT\tAMT\tAKTIV',
-  '000000200001\tSecret Pump Alpha\tA\t1000.00\t20190101',
-  '000000200002\tSecret Valve Beta\tA\t2500.50\t20190202',
-  '000000200003\tSecret Motor Gamma\tB\t99.99\t20190303',
-  '000000200004\tSecret Press Delta\tB\t12.34\t20190404',
+  'ANLN1\tTXT50\tASTAT\tAMT\tAKTIV\tABGDT',
+  '000000200001\tSecret Pump Alpha\tA\t1000.00\t20190101\t00000000',
+  '000000200002\tSecret Valve Beta\tA\t2500.50\t20190202\t00000000',
+  '000000200003\tSecret Motor Gamma\tB\t99.99\t20190303\t20171017',
+  '000000200004\tSecret Press Delta\tB\t12.34\t20190404\t20171017',
 ].join('\n');
 
 export interface Setup {

@@ -1,122 +1,164 @@
 import type { Catalog } from './catalog.js';
 
-/** One correct example of each mapping an AI may propose, with real IDs from the project when there are any. */
+/**
+ * The shapes of the answer, with real names from the project when there are any. Tables, structures and fields are
+ * named, never numbered: the app finds the IDs.
+ */
 export function buildExamples(c: Catalog): Record<string, unknown> {
-  const target = c.structures.flatMap((s) =>
-    s.fields.filter((f) => !f.manual).map((f) => ({ s, f })),
-  );
-  const source = c.datasets.flatMap((d) => d.fields.map((f) => ({ d, f })));
-  const t1 = target[0];
-  const t2 = target[1] ?? target[0];
-  const s1 = source[0];
-  const s2 = source[1] ?? source[0];
+  const d1 = c.datasets[0];
+  const d2 = c.datasets[1] ?? d1;
+  const s1 = c.structures[0];
+  const target = s1?.fields.find((f) => !f.manual) ?? s1?.fields[0];
+  const target2 = s1?.fields.filter((f) => !f.manual)[1] ?? target;
+  const f1 = d1?.fields[0];
+  const f2 = d1?.fields[1] ?? f1;
+  const name = (f: { technicalName?: string; name: string } | undefined, alt: string): string =>
+    f?.technicalName ?? f?.name ?? alt;
   return {
     _readMe:
-      'This is the shape of your answer. Copy IDs from catalog.md exactly. id, transformations and status are optional (the app fills them in).',
-    lookups: [
-      {
-        id: 'lk-example-status-code-to-target-code',
-        name: 'Example: status code to target code',
-        keyDatatype: 'string',
-        valueDatatype: 'string',
-        entries: [
-          { key: 'A', value: '01' },
-          { key: 'B', value: '02' },
-        ],
-      },
-    ],
-    mappings: [
-      {
-        targetStructureId: t1?.s.id ?? '<structure ID>',
-        targetFieldId: t1?.f.id ?? '<target field ID>',
-        mappingType: 'direct',
-        sourceReferences: [
-          { datasetId: s1?.d.id ?? '<dataset ID>', fieldId: s1?.f.id ?? '<source field ID>' },
-        ],
-      },
-      {
-        targetStructureId: t2?.s.id ?? '<structure ID>',
-        targetFieldId: t2?.f.id ?? '<target field ID>',
-        mappingType: 'lookup',
-        sourceReferences: [
-          { datasetId: s2?.d.id ?? '<dataset ID>', fieldId: s2?.f.id ?? '<source field ID>' },
-        ],
-        lookup: { lookupId: 'lk-example-status-code-to-target-code' },
-      },
-    ],
+      'Shapes of your answers. Use the names exactly as in catalog.md. Give one JSON block per step; leave out the parts that do not belong to the step.',
+    step1_tableDescriptions: {
+      tableDescriptions: [
+        {
+          table: d1?.name ?? '<table>',
+          description: '<what the table holds, from the SAP table text>',
+        },
+      ],
+    },
+    step2_pairings: {
+      pairings: [
+        {
+          structure: s1?.name ?? '<structure>',
+          mainTable: d1?.name ?? '<table>',
+          extraTables: d2 && d2 !== d1 ? [d2.name] : [],
+          confidence: 'likely',
+          reason: '<why this table feeds this structure>',
+        },
+      ],
+    },
+    step3_fieldDescriptions: {
+      fieldDescriptions: [
+        {
+          table: d1?.name ?? '<table>',
+          field: name(f1, '<field>'),
+          description: '<what the field means, from the SAP field text>',
+        },
+      ],
+    },
+    step3_mappings: {
+      lookups: [
+        {
+          id: 'lk-example-status-code-to-target-code',
+          name: 'Example: status code to target code',
+          keyDatatype: 'string',
+          valueDatatype: 'string',
+          entries: [
+            { key: 'A', value: '01' },
+            { key: 'B', value: '02' },
+          ],
+        },
+      ],
+      mappings: [
+        {
+          structure: s1?.name ?? '<structure>',
+          target: name(target, '<target field>'),
+          table: d1?.name ?? '<table>',
+          source: name(f1, '<source field>'),
+          type: 'direct',
+          confidence: 'certain',
+        },
+        {
+          structure: s1?.name ?? '<structure>',
+          target: name(target2, '<target field>'),
+          table: d1?.name ?? '<table>',
+          source: name(f2, '<source field>'),
+          type: 'lookup',
+          lookup: 'Example: status code to target code',
+        },
+      ],
+    },
   };
 }
 
 /**
- * The guided prompt for a chat AI. Deterministic: the same catalog gives the same text. It asks for one target
- * structure at a time, questions before guesses, and an answer in the JSON shape the app can import.
+ * The prompt for a chat AI: a guided wizard in one conversation. Deterministic: the same catalog gives the same text.
+ * It is not specific to one business object: it works for any set of SAP source tables and any target template.
  */
 export function buildPrompt(c: Catalog): string {
   const structureList = c.structures
-    .map(
-      (s, i) =>
-        `${i + 1}. ${s.name} (${s.fields.length} fields${s.sheet ? `, tab "${s.sheet}"` : ''})`,
-    )
+    .map((s, i) => `${i + 1}. ${s.name} (${s.fields.length} fields)`)
     .join('\n');
-  const datasetList = c.datasets.map((d) => `${d.name} (${d.rows ?? '?'} rows)`).join(', ');
-  return `# Task: propose the first mapping for "${c.object}"
+  const tableList = c.datasets
+    .map((d) => `${d.name}${d.description ? ` (${d.description})` : ''} - ${d.rows ?? '?'} rows`)
+    .join('\n');
+  return `# Task: guided mapping for "${c.object}"
 
-You are an experienced SAP data migration consultant. Source data is a set of SAP tables (ECC or S/4HANA) exported
-as files. The target is a migration template with several structures (tabs). Propose which source field fills each
-target field. A human reviews everything you propose. Be exact and honest: a missing mapping is better than a wrong one.
+You are an experienced SAP data migration consultant, and you run this as a guided session with me in this chat.
+The source data is a set of SAP tables (ECC or S/4HANA) exported as files. The target is a migration template with
+several structures (tabs). Work in the steps below. Ask me short numbered questions whenever something is unclear,
+and wait for my answers before you finish a step. A person reviews everything you propose: a missing mapping is
+better than a wrong one.
 
 ## What is attached
-- \`catalog.md\` (the same content may also come as \`catalog.json\`): every target structure and field with its Field
-  ID, every source table and field with its Field ID, statistics, the joins between source tables, and for code-like
-  columns the list of values. These are the ONLY IDs you may use. Never invent or shorten an ID.
-- \`examples.json\`: the exact shape of your answer.
-You only return the JSON described below, never the whole project.
+- \`catalog.md\`: the target structures with their fields, and the source tables with their fields, statistics and,
+  for code-like columns, the codes. These names are the ONLY ones you may use in your answers. Never invent a
+  table, structure or field name.
+- \`examples.json\`: the exact shapes of the JSON you give me after each step.
 
-Source tables: ${datasetList}.
+Source tables:
+${tableList}
 
-Target structures, in this order:
+Target structures:
 ${structureList}
 
-## Rules
-1. Propose only two kinds of mapping:
-   - \`direct\`: the target field is filled from exactly one source field, unchanged.
-   - \`lookup\`: the target field is filled from one source field through a value table (source code to target code).
-     Only when the catalog lists the source codes for that column. Put the table in \`lookups\`.
-2. Do NOT map date fields (marked "user (date)" in the catalog) and do NOT propose constants, hard-coded values,
-   formulas, concatenations or splits. The user does those by hand. If a target field needs one of them, list it as
-   "needs manual" in your table.
-3. Match on meaning first, then type and length. A name match alone is not enough: the same technical name can mean
-   different things in different tables. Check the target description and the SAP meaning of the field.
-4. If no source field in the files fits, do not guess. Say there is no source, and name the SAP table that normally
-   holds it (for example ANLB for depreciation keys, ANLT for asset texts) so the user can ask for that extract.
-5. If two source fields could fit, or the target field is unclear, ask the user (see the steps) instead of picking.
-6. One source field may fill several target fields. One target field gets at most one mapping.
-7. Use the joins in the catalog. A target structure takes its rows from one driver table. Fields from other tables are
-   reached through the joins. Say which driver table and which joins you assume for each structure.
-8. Many SAP columns are empty in the export ("Filled %" is 0 in the catalog). Prefer a source field that has data.
-   If the only fitting source field is empty, say so in your table instead of dropping it silently.
-9. Research: use the target field descriptions in the catalog, the SAP documentation of this migration object and the
-   SAP field texts (table DD03T) where you know them, and search the web when unsure. Name the source of each
-   non-obvious decision in your table. Do not put explanations in the JSON.
+## Steps
+Go step by step. After each step give me ONE JSON code block, then say what comes next. Do not skip ahead.
 
-## Steps (one target structure at a time)
-Start with structure 1. Do not move on until the user says so.
-1. Say which source table drives the rows of this structure, and which joins you need.
-2. Go through the target fields. For each, give: the proposed source (Table.Field), a confidence (certain, likely or
-   guess), and a short reason. Mark target fields that have no source, need a lookup, or need manual work.
-3. Ask the user numbered questions about everything unclear. Wait for the answers. Then finalise.
-4. Return exactly one JSON code block for this structure (shape below), then the table.
-5. Ask whether to continue with the next structure.
-When all structures are done, give a summary: counts per structure, the target fields with no source, the SAP
-tables that would be needed for them, and the open questions.
+### Step 0 - Interview
+Ask me: which source tables are relevant for this object (for example, posting documents are usually not
+master data), which SAP release the data comes from, and anything I already know about which table feeds which
+structure. Keep it to a few questions.
 
-## Shape of the JSON
-Use the shape in \`examples.json\`. Mappings use \`mappingType\` "direct" or "lookup" and exactly one entry in
-\`sourceReferences\`: \`{ "datasetId": ..., "fieldId": ... }\` with IDs from the catalog. A lookup mapping also needs
-\`"lookup": { "lookupId": "<ID of an entry in lookups>" }\`. Lookup tables go in \`lookups\` with \`name\`, \`keyDatatype\`,
-\`valueDatatype\` and \`entries\` (\`key\`, \`value\`) and an \`id\` such as "lk-asset-class".
+### Step 1 - What the source tables are
+For each relevant source table, find its description online (the SAP table text, for example in the SAP data
+dictionary or SAP Help). Give me a short table and then the JSON (\`tableDescriptions\`, see examples.json).
 
-## If the user pastes an import report
+### Step 2 - Which table feeds which structure
+For every target structure propose ONE main source table, and extra tables only if the main table cannot supply the
+structure's key or mandatory fields. Use the table descriptions from step 1, the key fields and field names of the
+structure, and what the SAP migration object normally reads. Give me, for each structure: main table, extra
+tables, a confidence (certain, likely, guess) and a short reason. Ask me about every "guess". After I confirm, give
+the JSON (\`pairings\`). Structures that no table in the files can feed are listed as "no source", with the SAP
+table that normally holds the data, so I can ask for that extract.
+
+### Step 3 - Fields, one structure at a time
+Take the structures in the order above and do this for each, then ask whether to continue:
+1. Look up the field descriptions of its main table (and extras) online and give me the JSON
+   (\`fieldDescriptions\`). Only the fields that matter for this structure.
+2. Compare each target field with the source fields: by meaning first, then by type and length. Use the target field
+   descriptions from the catalog, the SAP meaning of the source fields, and the statistics. A name match alone is
+   not enough: one technical name can mean different things in different tables.
+3. For each target field give: the proposed source (Table.Field), a confidence, a short reason. Mark fields that
+   have no source, need a lookup, or need manual work. Ask me about anything unclear.
+4. Give the JSON (\`mappings\` and, if needed, \`lookups\`).
+
+### Step 4 - Summary
+Counts per structure, the target fields with no source and the SAP tables that would hold them, and open questions.
+
+## Rules for mappings
+1. Only two kinds: \`direct\` (one source field, unchanged) and \`lookup\` (one source field through a value table; only
+   when catalog.md lists the source codes for that column).
+2. Do NOT map date fields (marked "user (date)") and do NOT propose constants, hard-coded values, formulas,
+   concatenations or splits. I do those by hand. List such fields as "needs manual".
+3. One target field gets at most one mapping. One source field may fill several target fields.
+4. Prefer a source field that has data. Columns listed under "Empty in this export" have no values; if the only
+   fitting field is empty, tell me instead of dropping it silently.
+5. Use only the main table of a structure. A field from an extra table is only usable if a join is listed in
+   catalog.md; otherwise tell me it needs a join.
+6. Give the source of every non-obvious decision (a web page, the SAP table text) in your table, not in the JSON.
+7. Everything here applies to any business object: do not assume this one's structures or tables.
+
+## If I paste an import report
 It lists items that could not be imported, with the reason. Fix only those items and answer with one JSON code block
 that contains just the corrected items.
 `;
@@ -125,16 +167,18 @@ that contains just the corrected items.
 export function kitReadme(c: Catalog): string {
   return `# AI mapping kit: ${c.object}
 
-Use this with any chat AI (Copilot, Gemini, ChatGPT, Claude). It never sees your data rows: only names, statistics and
-the codes of code-like columns.
+One kit for the whole mapping. It never contains your data rows: only names, statistics and the codes of code-like
+columns.
 
-1. Open a new chat with the AI. Attach \`catalog.md\` and \`examples.json\` (\`catalog.json\` has the same content as \`catalog.md\`
-   and is only needed if the chat cannot read the Markdown well). Paste the whole of \`PROMPT.md\` as your first message.
-2. Work through the structures one at a time. Answer the AI's questions.
-3. Copy the AI's JSON code block. In the app, open the Map stage and choose "Import AI result", paste it and import.
-   The valid mappings are added as "needs review". Nothing you already mapped is changed.
-4. If the app reports skipped items, choose "Copy report for the AI", paste it into the chat, and import the corrected
-   JSON.
-5. Review each imported mapping in the Map stage and accept it. Dates and hard-coded values are yours to do.
+1. Open a new chat with an AI that can search the web (Copilot, Gemini, ChatGPT, Claude). Attach \`catalog.md\` and
+   \`examples.json\`. Paste the whole of \`PROMPT.md\` as your first message.
+2. The AI interviews you and works in steps: table descriptions, which table feeds which structure, then fields
+   one structure at a time. Answer its questions.
+3. After each step the AI gives one JSON block. In the app open the Map stage, choose "Import AI result", paste it
+   and import. Descriptions are added, pairings are shown as "suggested" in the Structures overview, mappings are
+   added as "needs review". Nothing you already did is changed.
+4. If the app reports skipped items, choose "Copy report for the AI", paste it into the chat, and import the
+   corrected JSON.
+5. Confirm the pairings in the Structures overview, review the mappings and do the dates and hard-coded values yourself.
 `;
 }
