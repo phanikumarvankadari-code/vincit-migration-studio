@@ -153,12 +153,12 @@ test.describe('Snapshots and history (SPEC-027)', () => {
     await cleanProject(page);
     await runTest(page);
     await goToStage(page, 'ready');
-    await expect(page.getByTestId('ready-summary')).toHaveText('8 of 10 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('7 of 9 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toHaveText('Ready to save a snapshot');
     await saveSnapshot(page, 'Initial Mapping');
-    await expect(page.getByTestId('ready-summary')).toHaveText('9 of 10 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('8 of 9 checks done');
     await page.getByRole('button', { name: 'Mark Initial Mapping approved' }).click();
-    await expect(page.getByTestId('ready-summary')).toHaveText('10 of 10 checks done');
+    await expect(page.getByTestId('ready-summary')).toHaveText('9 of 9 checks done');
     await expect(page.getByTestId('stage-ready-summary')).toHaveText(
       'Snapshot "Initial Mapping" is approved',
     );

@@ -257,7 +257,17 @@ export function SourcesStage() {
       {rels.length > 0 && (
         <Section
           title="Joins between the files"
-          hint="The app suggests joins from names, keys and values. Confirm the ones that are right; only confirmed joins are used when mappings run."
+          hint="Joins are optional. The app suggests joins from names, keys and values; only confirmed joins are used when mappings run, so you can ignore them or reject them all."
+          actions={
+            rels.some((r) => r.status === 'suggested') ? (
+              <Button
+                data-testid="reject-all-joins"
+                onClick={() => send({ type: 'relationshipsRejectedAll' })}
+              >
+                Reject all suggested joins
+              </Button>
+            ) : undefined
+          }
         >
           <div className={s.list}>
             {rels.map((r) => (

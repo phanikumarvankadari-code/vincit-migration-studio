@@ -345,11 +345,11 @@ describe('stage status and readiness', () => {
     expect(s.sources.summary).toBe('No files yet');
   });
 
-  it('sources need attention while a suggested join is open, then complete', () => {
+  it('an open join suggestion never blocks the sources stage; confirming it is shown in the summary', () => {
     let s = ready();
     expect(stageStatuses(s).sources).toEqual({
-      state: 'attention',
-      summary: '2 datasets, 1 join to confirm',
+      state: 'complete',
+      summary: '2 datasets, 1 join suggested',
     });
     s = apply(s, {
       type: 'relationshipDecided',
@@ -365,6 +365,27 @@ describe('stage status and readiness', () => {
       state: 'complete',
       summary: '1 structure, 3 fields',
     });
+  });
+
+  it('Reject all rejects every suggested join and keeps the confirmed ones', () => {
+    const s0 = ready();
+    const rels = s0.project.mappingDefinition.relationships;
+    expect(rels.length).toBeGreaterThan(0);
+    const s1 = apply(s0, { type: 'relationshipsRejectedAll', at: at() });
+    expect(s1.project.mappingDefinition.relationships.map((r) => r.status)).toEqual(
+      rels.map(() => 'rejected'),
+    );
+    expect(stageStatuses(s1).sources).toEqual({ state: 'complete', summary: '2 datasets' });
+    const first = rels[0]!.id;
+    const s2 = apply(
+      s0,
+      { type: 'relationshipDecided', relationshipId: first, status: 'confirmed', at: at() },
+      { type: 'relationshipsRejectedAll', at: at() },
+    );
+    const byId = Object.fromEntries(
+      s2.project.mappingDefinition.relationships.map((r) => [r.id, r.status]),
+    );
+    expect(byId[first]).toBe('confirmed');
   });
 
   it('the map stage follows completeness and pre-flight problems', () => {
@@ -441,7 +462,6 @@ describe('stage status and readiness', () => {
     const list = readinessChecklist(s);
     expect(list.map((i) => [i.label, i.done])).toEqual([
       ['Source files are loaded', true],
-      ['Every suggested join is confirmed or rejected', false],
       ['A target structure is loaded', true],
       ['All required and key fields are mapped', true],
       ['No mapping has a configuration problem', true],

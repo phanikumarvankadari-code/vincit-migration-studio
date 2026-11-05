@@ -60,6 +60,8 @@ export type StudioAction =
       status: Relationship['status'];
       at: string;
     }
+  /** Rejects every join that is still only suggested. Confirmed joins stay. */
+  | { type: 'relationshipsRejectedAll'; at: string }
   | {
       type: 'relationshipJoinType';
       relationshipId: string;
@@ -279,6 +281,22 @@ export function reduce(state: StudioState, action: StudioAction): StudioState {
         { dictionary: action.dictionary, importDiagnostics: diagnostics },
       );
       return syncRelationships(next, action.at);
+    }
+
+    case 'relationshipsRejectedAll': {
+      const relationships = state.project.mappingDefinition.relationships.map((r) =>
+        r.status === 'suggested' ? { ...r, status: 'rejected' as const } : r,
+      );
+      return withProject(
+        state,
+        stamp(
+          {
+            ...state.project,
+            mappingDefinition: { ...state.project.mappingDefinition, relationships },
+          },
+          action.at,
+        ),
+      );
     }
 
     case 'relationshipDecided': {
