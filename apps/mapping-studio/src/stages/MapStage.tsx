@@ -25,6 +25,7 @@ import { useStudio } from '../context';
 import { useOptionalWorkspace } from '../workspace';
 import { MappingEditor } from '../editor/MappingEditor';
 import { MappingTable } from './MappingTable';
+import { AiMappingPanel } from './AiMappingPanel';
 import { UndoBar } from './UndoBar';
 import { StructureSettings } from './StructureSettings';
 import { VisualMapper } from './VisualMapper';
@@ -161,6 +162,7 @@ export function MapStage() {
       </div>
 
       <UndoBar />
+      <AiMappingPanel />
       {openObject && (
         <div className={s.row}>
           <Button data-testid="download-mapping" onClick={() => void downloadMapping()}>
